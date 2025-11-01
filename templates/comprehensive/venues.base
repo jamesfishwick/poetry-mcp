@@ -1,0 +1,13 @@
+formulas:
+  Untitled: ""
+views:
+  - type: table
+    name: Venues
+    order:
+      - name
+      - payment
+      - response_time_days
+      - simultaneous
+      - aesthetic
+      - url
+      - submission_format

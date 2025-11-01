@@ -1,0 +1,11 @@
+formulas:
+  Untitled: ""
+views:
+  - type: table
+    name: Influences
+    order:
+      - name
+      - type
+      - period
+      - bibliography
+      - aesthetic

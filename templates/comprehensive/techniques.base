@@ -1,0 +1,9 @@
+formulas:
+  Untitled: ""
+views:
+  - type: table
+    name: Techniques
+    order:
+      - name
+      - category
+      - description

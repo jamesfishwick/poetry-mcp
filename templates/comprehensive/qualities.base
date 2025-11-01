@@ -1,0 +1,11 @@
+formulas:
+  Untitled: ""
+views:
+  - type: table
+    name: Qualities
+    order:
+      - name
+      - category
+      - scale_min
+      - scale_max
+      - description
