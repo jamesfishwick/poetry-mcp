@@ -475,14 +475,15 @@ __Status__: COMPLETE
 - [x] Config: ✅ 51% coverage
 - [x] Enrichment tools: ✅ 90% coverage
 - [x] Writers: ✅ 100% coverage (frontmatter writer)
-- [ ] Overall: 79% (target 85% minimum, 6% remaining) __(will increase)__
+- [x] Overall: 85% (target 85% minimum) ✅ **TARGET MET**
 
 __Progress__:
 
 - ✅ 343 tests passing (100% pass rate)
-- ✅ +64% coverage improvement (from 17% to 79%)
+- ✅ +68% coverage improvement (from 17% to 85%)
 - ✅ Zero test failures
 - ✅ All high-priority modules at >70% coverage
+- ✅ 85% target achieved
 
 ### Run Tests
 
@@ -508,7 +509,7 @@ pytest tests/ --cov=poetry_mcp --cov-report=term-missing
 - [x] FRONTMATTER_SCHEMA.md documented ✅
 - [x] Git repository created (github.com/jamesfishwick/poetry-mcp) ✅
 - [x] All tests passing ✅ (343 tests, 100% pass rate)
-- [ ] Coverage meets goals (85%+) - 79% achieved, 6% remaining
+- [x] Coverage meets goals (85%+) ✅ **85% achieved**
 - [x] Type checking passes (mypy) ✅
 - [x] Linting passes (ruff) ✅
 - [x] Formatting passes (black) ✅

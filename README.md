@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server for managing poetry catalogs, nexuses, and submissions.
 
-**Status:** Production Ready - 8 core tools implemented, 343 tests passing (79% coverage), all core features operational
+**Status:** Production Ready - 17 tools implemented, 343 tests passing (85% coverage), all core features operational
 
 ## Overview
 
@@ -130,7 +130,7 @@ This MCP server follows the **data provider** pattern:
 
 ## Testing & Quality
 
-- **Test Coverage:** 79% (343 tests, 100% pass rate)
+- **Test Coverage:** 85% (343 tests, 100% pass rate)
 - **Test Framework:** pytest with fixtures and parametrized tests
 - **Quality Tools:** black, ruff, mypy
 - **CI/CD:** Ready for integration with GitHub Actions
@@ -530,7 +530,7 @@ print(f"Moved to: {result['new_path']}")
 
 ### Current Status
 
-- **Test Coverage:** 79% (343 tests, 100% pass rate)
+- **Test Coverage:** 85% (343 tests, 100% pass rate)
 - **Implemented Tools:** 8 core MCP tools across all categories
 - **Production Ready:** Core functionality operational
 
@@ -539,7 +539,7 @@ print(f"Moved to: {result['new_path']}")
 - [ ] **Advanced Discovery Tools** - Similarity search, theme clustering, motif detection
 - [ ] **Backup & Rollback** - Explicit snapshots, batch rollback, git integration
 - [ ] **Performance Features** - File watching, hot reload, batch operations
-- [ ] **Additional Coverage** - 79% achieved, 6% to reach 85% target
+- [x] **Additional Coverage** - 85% target achieved ✅
 
 See [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) and [TEST_STATUS.md](TEST_STATUS.md) for detailed progress tracking.
 
