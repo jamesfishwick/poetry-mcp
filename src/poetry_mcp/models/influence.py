@@ -23,43 +23,32 @@ class Influence(BaseModel):
     """
 
     name: str = Field(
-        ...,
-        description="Name of the influence (e.g., 'William Bronk', 'Extreme Metal')"
+        ..., description="Name of the influence (e.g., 'William Bronk', 'Extreme Metal')"
     )
 
-    type: Literal[
-        "writer",
-        "movement",
-        "aesthetic",
-        "visual_artist",
-        "cultural_influence"
-    ] = Field(
-        ...,
-        description="Type of influence"
+    type: Literal["writer", "movement", "aesthetic", "visual_artist", "cultural_influence"] = Field(
+        ..., description="Type of influence"
     )
 
     period: Optional[str] = Field(
-        default=None,
-        description="Time period or active years (e.g., '1940s-1999', 'Contemporary')"
+        default=None, description="Time period or active years (e.g., '1940s-1999', 'Contemporary')"
     )
 
     bibliography: Optional[str] = Field(
-        default=None,
-        description="Key works (for writers), bibliography, or reference materials"
+        default=None, description="Key works (for writers), bibliography, or reference materials"
     )
 
     aesthetic: str = Field(
-        ...,
-        description="Aesthetic description, stylistic approach, or cultural impact"
+        ..., description="Aesthetic description, stylistic approach, or cultural impact"
     )
 
     file_path: Optional[str] = Field(
-        default=None,
-        description="Path to influence markdown file relative to vault root"
+        default=None, description="Path to influence markdown file relative to vault root"
     )
 
     class Config:
         """Pydantic configuration."""
+
         json_schema_extra = {
             "examples": [
                 {
@@ -68,7 +57,7 @@ class Influence(BaseModel):
                     "period": "1940s-1999",
                     "bibliography": "- The World, the Worldless\\n- Life Supports\\n- Vectors and Smoothable Curves",
                     "aesthetic": "Philosophical austerity, cosmic scale, metaphysical doubt. Stripped-down language exploring existence and nothingness.",
-                    "file_path": "influences/William Bronk.md"
+                    "file_path": "influences/William Bronk.md",
                 },
                 {
                     "name": "Extreme Metal",
@@ -76,7 +65,7 @@ class Influence(BaseModel):
                     "period": "1980s-present",
                     "bibliography": None,
                     "aesthetic": "Transgressive, visceral, confrontational. Explores violence, death, body horror. Sonic brutality as aesthetic stance.",
-                    "file_path": "influences/Extreme Metal.md"
+                    "file_path": "influences/Extreme Metal.md",
                 },
                 {
                     "name": "The Beats",
@@ -84,7 +73,7 @@ class Influence(BaseModel):
                     "period": "1950s-1960s",
                     "bibliography": "- Howl (Ginsberg)\\n- On the Road (Kerouac)\\n- Naked Lunch (Burroughs)",
                     "aesthetic": "Spontaneous composition, raw authenticity, rejection of conventional form. Jazz influence, American vernacular.",
-                    "file_path": "influences/The Beats.md"
-                }
+                    "file_path": "influences/The Beats.md",
+                },
             ]
         }

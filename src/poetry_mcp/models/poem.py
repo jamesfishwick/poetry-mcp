@@ -4,8 +4,8 @@ Data comes from markdown file frontmatter, not BASE files.
 """
 
 from datetime import datetime
-from typing import Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Optional, ClassVar
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class Poem(BaseModel):
@@ -26,47 +26,38 @@ class Poem(BaseModel):
     - created_at, updated_at: From filesystem timestamps
     """
 
+    # Class variable for custom states (set by catalog during initialization)
+    _custom_states: ClassVar[set[str]] = set()
+
+    @classmethod
+    def set_custom_states(cls, custom_states: list[str]) -> None:
+        """Set custom states that are valid in addition to standard states."""
+        cls._custom_states = set(custom_states)
+
     # Core identity
     id: str = Field(..., description="Unique identifier (filename without .md)")
     title: str = Field(..., description="Poem title from first # heading or filename")
     file_path: str = Field(..., description="Relative path from vault root")
 
     # Frontmatter: Required properties
-    state: Literal[
-        "completed",
-        "fledgeling",
-        "still_cooking",
-        "needs_research",
-        "risk"
-    ] = Field(..., description="Production state of the poem")
+    state: str = Field(..., description="Production state of the poem")
 
-    form: Literal[
-        "free_verse",
-        "prose_poem",
-        "american_sentence",
-        "catalog_poem"
-    ] = Field(..., description="Structural/formal pattern")
+    form: Literal["free_verse", "prose_poem", "american_sentence", "catalog_poem"] = Field(
+        ..., description="Structural/formal pattern"
+    )
 
     # Frontmatter: Optional properties
-    tags: list[str] = Field(
-        default_factory=list,
-        description="Thematic tags for nexus connections"
-    )
+    tags: list[str] = Field(default_factory=list, description="Thematic tags for nexus connections")
     keywords: Optional[str] = Field(
-        default=None,
-        description="Legacy comma-separated keywords (prefer tags)"
+        default=None, description="Legacy comma-separated keywords (prefer tags)"
     )
-    notes: Optional[str] = Field(
-        default=None,
-        description="Editorial notes about the poem"
-    )
+    notes: Optional[str] = Field(default=None, description="Editorial notes about the poem")
 
     # Computed metrics
     word_count: int = Field(..., description="Total word count")
     line_count: int = Field(..., description="Total line count")
     stanza_count: Optional[int] = Field(
-        default=None,
-        description="Number of stanzas (blank-line separated)"
+        default=None, description="Number of stanzas (blank-line separated)"
     )
 
     # Filesystem metadata
@@ -75,39 +66,38 @@ class Poem(BaseModel):
 
     # Content (optional, for search/display)
     content: Optional[str] = Field(
-        default=None,
-        description="Full poem text (only included if requested)"
+        default=None, description="Full poem text (only included if requested)"
     )
 
-    @field_validator('state')
+    # Quality scores (optional, for grading)
+    qualities: Optional[dict[str, int]] = Field(
+        default=None, description="Quality scores (0-10) keyed by dimension name"
+    )
+
+    @field_validator("state")
     @classmethod
     def validate_state(cls, v: str) -> str:
-        """Validate state enum value."""
-        valid_states = {
-            "completed", "fledgeling", "still_cooking",
-            "needs_research", "risk"
-        }
+        """Validate state enum value (standard + custom states)."""
+        standard_states = {"completed", "fledgeling", "still_cooking", "needs_research", "risk"}
+        # Combine standard and custom states
+        valid_states = standard_states | cls._custom_states
+
         if v not in valid_states:
             raise ValueError(
-                f"Invalid state '{v}'. Must be one of: {', '.join(valid_states)}"
+                f"Invalid state '{v}'. Must be one of: {', '.join(sorted(valid_states))}"
             )
         return v
 
-    @field_validator('form')
+    @field_validator("form")
     @classmethod
     def validate_form(cls, v: str) -> str:
         """Validate form enum value."""
-        valid_forms = {
-            "free_verse", "prose_poem",
-            "american_sentence", "catalog_poem"
-        }
+        valid_forms = {"free_verse", "prose_poem", "american_sentence", "catalog_poem"}
         if v not in valid_forms:
-            raise ValueError(
-                f"Invalid form '{v}'. Must be one of: {', '.join(valid_forms)}"
-            )
+            raise ValueError(f"Invalid form '{v}'. Must be one of: {', '.join(valid_forms)}")
         return v
 
-    @field_validator('tags')
+    @field_validator("tags")
     @classmethod
     def normalize_tags(cls, v: list[str]) -> list[str]:
         """Normalize tags: lowercase, strip whitespace, remove duplicates."""
@@ -116,9 +106,49 @@ class Poem(BaseModel):
         normalized = [tag.lower().strip() for tag in v if tag.strip()]
         return list(dict.fromkeys(normalized))  # Preserve order, remove dupes
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    @field_validator("qualities")
+    @classmethod
+    def validate_qualities(cls, v: Optional[dict[str, int]]) -> Optional[dict[str, int]]:
+        """Validate quality scores: 0-10 range, known dimension names."""
+        if v is None:
+            return None
+
+        # 8 universal quality dimensions
+        valid_dimensions = {
+            "detail",
+            "life",
+            "music",
+            "mystery",
+            "sufficient thought",
+            "surprise",
+            "syntax",
+            "unity",
+        }
+
+        # Normalize and validate
+        normalized = {}
+        for key, score in v.items():
+            # Normalize key to lowercase
+            key_lower = key.lower().strip()
+
+            # Validate dimension name
+            if key_lower not in valid_dimensions:
+                raise ValueError(
+                    f"Invalid quality dimension '{key}'. Must be one of: "
+                    f"{', '.join(sorted(valid_dimensions))}"
+                )
+
+            # Validate score range
+            if not isinstance(score, int) or score < 0 or score > 10:
+                raise ValueError(f"Quality score for '{key}' must be integer 0-10, got: {score}")
+
+            normalized[key_lower] = score
+
+        # Return sorted by key for consistency
+        return dict(sorted(normalized.items()))
+
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "second-bridge-out-old-route-12",
                 "title": "Second Bridge Out Old Route 12",
@@ -130,6 +160,16 @@ class Poem(BaseModel):
                 "line_count": 42,
                 "stanza_count": 7,
                 "created_at": "2024-01-15T10:30:00Z",
-                "updated_at": "2024-06-20T14:22:00Z"
+                "updated_at": "2024-06-20T14:22:00Z",
+                "qualities": {
+                    "detail": 8,
+                    "life": 7,
+                    "music": 6,
+                    "mystery": 9,
+                    "surprise": 7,
+                    "syntax": 8,
+                    "unity": 9,
+                },
             }
         }
+    )

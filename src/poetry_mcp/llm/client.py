@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LLMResponse:
     """Response from LLM API call."""
+
     content: str
     parsed_json: Optional[dict] = None
     model: str = ""
@@ -191,7 +192,7 @@ class ClaudeClient:
                 last_error = e
                 logger.warning(f"API timeout on attempt {attempt + 1}/{self.max_retries}")
                 if attempt < self.max_retries - 1:
-                    time.sleep(2 ** attempt)  # Exponential backoff
+                    time.sleep(2**attempt)  # Exponential backoff
 
             except APIError as e:
                 last_error = e
@@ -201,7 +202,7 @@ class ClaudeClient:
                         f"API error {e.status_code} on attempt {attempt + 1}/{self.max_retries}"
                     )
                     if attempt < self.max_retries - 1:
-                        time.sleep(2 ** attempt)
+                        time.sleep(2**attempt)
                 else:
                     # Non-retryable error
                     raise

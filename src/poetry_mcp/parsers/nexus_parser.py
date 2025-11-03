@@ -5,7 +5,6 @@ a registry organized by category (themes, motifs, forms).
 """
 
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -25,40 +24,32 @@ def extract_canonical_tag(file_path: Path) -> tuple[str, str]:
     Raises:
         FrontmatterParseError: If frontmatter is malformed or missing canonical_tag
     """
-    content = file_path.read_text(encoding='utf-8')
-    lines = content.split('\n')
+    content = file_path.read_text(encoding="utf-8")
+    lines = content.split("\n")
 
     # Check for frontmatter delimiter
-    if not lines or lines[0].strip() != '---':
-        raise FrontmatterParseError(
-            f"Missing frontmatter in {file_path}: expected '---' delimiter"
-        )
+    if not lines or lines[0].strip() != "---":
+        raise FrontmatterParseError(f"Missing frontmatter in {file_path}: expected '---' delimiter")
 
     # Find closing delimiter
     try:
-        end_idx = lines[1:].index('---') + 1
+        end_idx = lines[1:].index("---") + 1
     except ValueError:
-        raise FrontmatterParseError(
-            f"Unclosed frontmatter in {file_path}: missing closing '---'"
-        )
+        raise FrontmatterParseError(f"Unclosed frontmatter in {file_path}: missing closing '---'")
 
     # Extract frontmatter YAML
     frontmatter_lines = lines[1:end_idx]
-    frontmatter_text = '\n'.join(frontmatter_lines)
+    frontmatter_text = "\n".join(frontmatter_lines)
 
     try:
         frontmatter = yaml.safe_load(frontmatter_text) or {}
     except yaml.YAMLError as e:
-        raise FrontmatterParseError(
-            f"Invalid YAML in frontmatter of {file_path}: {e}"
-        )
+        raise FrontmatterParseError(f"Invalid YAML in frontmatter of {file_path}: {e}")
 
     # Get canonical_tag
-    canonical_tag = frontmatter.get('canonical_tag')
+    canonical_tag = frontmatter.get("canonical_tag")
     if not canonical_tag:
-        raise FrontmatterParseError(
-            f"Missing 'canonical_tag' field in frontmatter of {file_path}"
-        )
+        raise FrontmatterParseError(f"Missing 'canonical_tag' field in frontmatter of {file_path}")
 
     return canonical_tag, content
 
@@ -80,7 +71,7 @@ def parse_nexus_file(file_path: Path, category: str) -> Nexus:
 
     # Extract name from filename (remove .md and "Imagery" suffix if present)
     name = file_path.stem
-    if name.endswith(' Imagery'):
+    if name.endswith(" Imagery"):
         name = name[:-8]  # Remove " Imagery"
 
     # Build description from file content (for LLM context)
@@ -109,7 +100,7 @@ def scan_nexus_directory(
     Returns:
         List of Nexus instances
     """
-    nexuses = []
+    nexuses: list[Nexus] = []
 
     if not nexus_dir.exists():
         return nexuses

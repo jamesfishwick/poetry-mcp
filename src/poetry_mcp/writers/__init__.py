@@ -7,7 +7,7 @@ from .frontmatter_writer import (
 )
 
 __all__ = [
-    'update_poem_tags',
-    'update_poem_frontmatter',
-    'FrontmatterUpdateResult',
+    "update_poem_tags",
+    "update_poem_frontmatter",
+    "FrontmatterUpdateResult",
 ]

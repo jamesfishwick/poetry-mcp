@@ -40,21 +40,19 @@ def build_theme_detection_prompt(
     for nexus in available_nexuses:
         # Extract key description from full markdown
         # (For now, just use first few lines of description)
-        desc_lines = nexus.description.split('\n')
+        desc_lines = nexus.description.split("\n")
         brief_desc = []
         for line in desc_lines:
-            if line.strip() and not line.startswith('#'):
+            if line.strip() and not line.startswith("#"):
                 brief_desc.append(line.strip())
                 if len(brief_desc) >= 3:  # Limit to 3 lines
                     break
 
-        brief_text = ' '.join(brief_desc)[:200]  # Max 200 chars
+        brief_text = " ".join(brief_desc)[:200]  # Max 200 chars
 
-        nexus_descriptions.append(
-            f"**{nexus.name}** (tag: #{nexus.canonical_tag}): {brief_text}"
-        )
+        nexus_descriptions.append(f"**{nexus.name}** (tag: #{nexus.canonical_tag}): {brief_text}")
 
-    nexuses_text = '\n'.join(nexus_descriptions)
+    nexuses_text = "\n".join(nexus_descriptions)
 
     prompt = f"""Analyze this poem and identify which themes it engages with.
 
@@ -124,26 +122,27 @@ def build_batch_enrichment_prompt(
     nexus_refs = []
     for nexus in available_nexuses:
         # Very brief description for batch mode
-        desc_lines = nexus.description.split('\n')
+        desc_lines = nexus.description.split("\n")
         brief = next(
-            (line.strip() for line in desc_lines if line.strip() and not line.startswith('#')),
-            ""
+            (line.strip() for line in desc_lines if line.strip() and not line.startswith("#")), ""
         )[:100]
         nexus_refs.append(f"#{nexus.canonical_tag}: {brief}")
 
-    nexuses_text = '\n'.join(nexus_refs)
+    nexuses_text = "\n".join(nexus_refs)
 
     # Build poems list
     poems_text = []
     for i, poem_data in enumerate(poems_data, 1):
-        poems_text.append(f"""
+        poems_text.append(
+            f"""
 ## Poem {i}: {poem_data['title']}
 ```
 {poem_data['content'].strip()[:500]}...
 ```
-""")
+"""
+        )
 
-    poems_section = '\n'.join(poems_text)
+    poems_section = "\n".join(poems_text)
 
     prompt = f"""Analyze these {len(poems_data)} poems and suggest theme tags for each.
 

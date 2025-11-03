@@ -64,12 +64,12 @@ def test_extract_frontmatter_with_valid_yaml(sample_poem_with_frontmatter):
     content = sample_poem_with_frontmatter.read_text()
     frontmatter, body = extract_frontmatter_and_content(content, sample_poem_with_frontmatter)
 
-    assert frontmatter['state'] == 'completed'
-    assert frontmatter['form'] == 'free_verse'
-    assert 'nature' in frontmatter['tags']
-    assert 'water' in frontmatter['tags']
-    assert 'The river flows' in body
-    assert '---' not in body
+    assert frontmatter["state"] == "completed"
+    assert frontmatter["form"] == "free_verse"
+    assert "nature" in frontmatter["tags"]
+    assert "water" in frontmatter["tags"]
+    assert "The river flows" in body
+    assert "---" not in body
 
 
 def test_extract_frontmatter_with_no_frontmatter(sample_poem_no_frontmatter):
@@ -78,7 +78,7 @@ def test_extract_frontmatter_with_no_frontmatter(sample_poem_no_frontmatter):
     frontmatter, body = extract_frontmatter_and_content(content, sample_poem_no_frontmatter)
 
     assert frontmatter == {}
-    assert 'The river flows' in body
+    assert "The river flows" in body
 
 
 def test_serialize_frontmatter_roundtrip(sample_poem_with_frontmatter):
@@ -90,10 +90,12 @@ def test_serialize_frontmatter_roundtrip(sample_poem_with_frontmatter):
     new_content = serialize_frontmatter_and_content(frontmatter, body)
 
     # Re-parse
-    new_frontmatter, new_body = extract_frontmatter_and_content(new_content, sample_poem_with_frontmatter)
+    new_frontmatter, new_body = extract_frontmatter_and_content(
+        new_content, sample_poem_with_frontmatter
+    )
 
-    assert new_frontmatter['state'] == frontmatter['state']
-    assert new_frontmatter['tags'] == frontmatter['tags']
+    assert new_frontmatter["state"] == frontmatter["state"]
+    assert new_frontmatter["tags"] == frontmatter["tags"]
     assert new_body.strip() == body.strip()
 
 
@@ -101,60 +103,60 @@ def test_update_poem_tags_add_new_tags(sample_poem_with_frontmatter):
     """Test adding new tags to a poem."""
     result = update_poem_tags(
         sample_poem_with_frontmatter,
-        tags_to_add=['childhood', 'memory'],
+        tags_to_add=["childhood", "memory"],
         create_backup_file=True,
     )
 
     assert result.success
-    assert 'childhood' in result.tags_added
-    assert 'memory' in result.tags_added
+    assert "childhood" in result.tags_added
+    assert "memory" in result.tags_added
     assert result.backup_path is not None
 
     # Verify tags were added
     content = sample_poem_with_frontmatter.read_text()
     frontmatter, _ = extract_frontmatter_and_content(content, sample_poem_with_frontmatter)
-    assert 'childhood' in frontmatter['tags']
-    assert 'memory' in frontmatter['tags']
-    assert 'nature' in frontmatter['tags']  # Original tags preserved
+    assert "childhood" in frontmatter["tags"]
+    assert "memory" in frontmatter["tags"]
+    assert "nature" in frontmatter["tags"]  # Original tags preserved
 
 
 def test_update_poem_tags_remove_tags(sample_poem_with_frontmatter):
     """Test removing tags from a poem."""
     result = update_poem_tags(
         sample_poem_with_frontmatter,
-        tags_to_remove=['nature'],
+        tags_to_remove=["nature"],
         create_backup_file=True,
     )
 
     assert result.success
-    assert 'nature' in result.tags_removed
+    assert "nature" in result.tags_removed
 
     # Verify tag was removed
     content = sample_poem_with_frontmatter.read_text()
     frontmatter, _ = extract_frontmatter_and_content(content, sample_poem_with_frontmatter)
-    assert 'nature' not in frontmatter['tags']
-    assert 'water' in frontmatter['tags']  # Other tags preserved
+    assert "nature" not in frontmatter["tags"]
+    assert "water" in frontmatter["tags"]  # Other tags preserved
 
 
 def test_update_poem_tags_add_and_remove(sample_poem_with_frontmatter):
     """Test adding and removing tags in same operation."""
     result = update_poem_tags(
         sample_poem_with_frontmatter,
-        tags_to_add=['childhood'],
-        tags_to_remove=['water'],
+        tags_to_add=["childhood"],
+        tags_to_remove=["water"],
         create_backup_file=True,
     )
 
     assert result.success
-    assert 'childhood' in result.tags_added
-    assert 'water' in result.tags_removed
+    assert "childhood" in result.tags_added
+    assert "water" in result.tags_removed
 
     # Verify changes
     content = sample_poem_with_frontmatter.read_text()
     frontmatter, _ = extract_frontmatter_and_content(content, sample_poem_with_frontmatter)
-    assert 'childhood' in frontmatter['tags']
-    assert 'water' not in frontmatter['tags']
-    assert 'nature' in frontmatter['tags']
+    assert "childhood" in frontmatter["tags"]
+    assert "water" not in frontmatter["tags"]
+    assert "nature" in frontmatter["tags"]
 
 
 def test_update_poem_tags_preserve_other_frontmatter(sample_poem_with_frontmatter):
@@ -164,7 +166,7 @@ def test_update_poem_tags_preserve_other_frontmatter(sample_poem_with_frontmatte
 
     result = update_poem_tags(
         sample_poem_with_frontmatter,
-        tags_to_add=['test'],
+        tags_to_add=["test"],
     )
 
     assert result.success
@@ -173,36 +175,36 @@ def test_update_poem_tags_preserve_other_frontmatter(sample_poem_with_frontmatte
     new_content = sample_poem_with_frontmatter.read_text()
     new_fm, _ = extract_frontmatter_and_content(new_content, sample_poem_with_frontmatter)
 
-    assert new_fm['state'] == original_fm['state']
-    assert new_fm['form'] == original_fm['form']
-    assert new_fm['notes'] == original_fm['notes']
-    assert new_fm['created_at'] == original_fm['created_at']
+    assert new_fm["state"] == original_fm["state"]
+    assert new_fm["form"] == original_fm["form"]
+    assert new_fm["notes"] == original_fm["notes"]
+    assert new_fm["created_at"] == original_fm["created_at"]
 
 
 def test_update_poem_tags_no_frontmatter(sample_poem_no_frontmatter):
     """Test adding tags to poem with no frontmatter."""
     result = update_poem_tags(
         sample_poem_no_frontmatter,
-        tags_to_add=['nature', 'water'],
+        tags_to_add=["nature", "water"],
     )
 
     assert result.success
-    assert 'nature' in result.tags_added
-    assert 'water' in result.tags_added
+    assert "nature" in result.tags_added
+    assert "water" in result.tags_added
 
     # Verify frontmatter was created
     content = sample_poem_no_frontmatter.read_text()
-    assert content.startswith('---')
+    assert content.startswith("---")
     frontmatter, body = extract_frontmatter_and_content(content, sample_poem_no_frontmatter)
-    assert 'nature' in frontmatter['tags']
-    assert 'water' in frontmatter['tags']
+    assert "nature" in frontmatter["tags"]
+    assert "water" in frontmatter["tags"]
 
 
 def test_update_poem_tags_deduplication(sample_poem_with_frontmatter):
     """Test that duplicate tags are not added."""
     result = update_poem_tags(
         sample_poem_with_frontmatter,
-        tags_to_add=['nature', 'water'],  # Already exist
+        tags_to_add=["nature", "water"],  # Already exist
     )
 
     assert result.success
@@ -212,17 +214,17 @@ def test_update_poem_tags_deduplication(sample_poem_with_frontmatter):
 def test_update_poem_tags_nonexistent_file(temp_dir):
     """Test updating tags on nonexistent file."""
     fake_path = temp_dir / "nonexistent.md"
-    result = update_poem_tags(fake_path, tags_to_add=['test'])
+    result = update_poem_tags(fake_path, tags_to_add=["test"])
 
     assert not result.success
-    assert 'not found' in result.error.lower()
+    assert "not found" in result.error.lower()
 
 
 def test_update_poem_frontmatter_general(sample_poem_with_frontmatter):
     """Test general frontmatter update function."""
     result = update_poem_frontmatter(
         sample_poem_with_frontmatter,
-        updates={'state': 'fledgeling', 'notes': 'Updated note'},
+        updates={"state": "fledgeling", "notes": "Updated note"},
     )
 
     assert result.success
@@ -230,14 +232,14 @@ def test_update_poem_frontmatter_general(sample_poem_with_frontmatter):
     # Verify updates
     content = sample_poem_with_frontmatter.read_text()
     frontmatter, _ = extract_frontmatter_and_content(content, sample_poem_with_frontmatter)
-    assert frontmatter['state'] == 'fledgeling'
-    assert frontmatter['notes'] == 'Updated note'
-    assert frontmatter['form'] == 'free_verse'  # Preserved
+    assert frontmatter["state"] == "fledgeling"
+    assert frontmatter["notes"] == "Updated note"
+    assert frontmatter["form"] == "free_verse"  # Preserved
 
 
 def test_backup_creation(sample_poem_with_frontmatter):
     """Test that backup files are created."""
-    backup_path = sample_poem_with_frontmatter.with_suffix('.md.bak')
+    backup_path = sample_poem_with_frontmatter.with_suffix(".md.bak")
 
     # Ensure no backup exists initially
     if backup_path.exists():
@@ -245,7 +247,7 @@ def test_backup_creation(sample_poem_with_frontmatter):
 
     result = update_poem_tags(
         sample_poem_with_frontmatter,
-        tags_to_add=['test'],
+        tags_to_add=["test"],
         create_backup_file=True,
     )
 
@@ -254,8 +256,8 @@ def test_backup_creation(sample_poem_with_frontmatter):
 
     # Verify backup has original content
     backup_content = backup_path.read_text()
-    assert 'nature' in backup_content
-    assert 'test' not in backup_content
+    assert "nature" in backup_content
+    assert "test" not in backup_content
 
 
 def test_rollback_from_backup(sample_poem_with_frontmatter):
@@ -266,14 +268,14 @@ def test_rollback_from_backup(sample_poem_with_frontmatter):
     # Make a change with backup
     result = update_poem_tags(
         sample_poem_with_frontmatter,
-        tags_to_add=['test'],
+        tags_to_add=["test"],
         create_backup_file=True,
     )
     assert result.success
 
     # Verify change was made
     new_content = sample_poem_with_frontmatter.read_text()
-    assert 'test' in new_content
+    assert "test" in new_content
 
     # Rollback
     success = rollback_from_backup(sample_poem_with_frontmatter)
@@ -282,17 +284,19 @@ def test_rollback_from_backup(sample_poem_with_frontmatter):
     # Verify original content restored
     restored_content = sample_poem_with_frontmatter.read_text()
     assert restored_content == original_content
-    assert 'test' not in restored_content
+    assert "test" not in restored_content
 
 
 def test_atomic_write_preserves_content(sample_poem_with_frontmatter):
     """Test that atomic write doesn't corrupt content."""
     # Get original content
     original_content = sample_poem_with_frontmatter.read_text()
-    original_fm, original_body = extract_frontmatter_and_content(original_content, sample_poem_with_frontmatter)
+    original_fm, original_body = extract_frontmatter_and_content(
+        original_content, sample_poem_with_frontmatter
+    )
 
     # Update tags multiple times
-    for tag in ['tag1', 'tag2', 'tag3']:
+    for tag in ["tag1", "tag2", "tag3"]:
         result = update_poem_tags(
             sample_poem_with_frontmatter,
             tags_to_add=[tag],
@@ -305,7 +309,7 @@ def test_atomic_write_preserves_content(sample_poem_with_frontmatter):
     new_fm, new_body = extract_frontmatter_and_content(new_content, sample_poem_with_frontmatter)
 
     assert new_body.strip() == original_body.strip()
-    assert len(new_fm['tags']) == len(original_fm['tags']) + 3
+    assert len(new_fm["tags"]) == len(original_fm["tags"]) + 3
 
 
 def test_yaml_validation_prevents_corruption(sample_poem_with_frontmatter):
@@ -316,7 +320,7 @@ def test_yaml_validation_prevents_corruption(sample_poem_with_frontmatter):
 
     result = update_poem_tags(
         sample_poem_with_frontmatter,
-        tags_to_add=['valid-tag'],
+        tags_to_add=["valid-tag"],
     )
 
     assert result.success
@@ -325,3 +329,10 @@ def test_yaml_validation_prevents_corruption(sample_poem_with_frontmatter):
     content = sample_poem_with_frontmatter.read_text()
     frontmatter, _ = extract_frontmatter_and_content(content, sample_poem_with_frontmatter)
     assert isinstance(frontmatter, dict)
+
+
+def test_serialize_with_empty_frontmatter():
+    """Test serializing content with empty frontmatter returns content as-is."""
+    content = "# Test Poem\n\nJust content, no frontmatter"
+    result = serialize_frontmatter_and_content({}, content)
+    assert result == content

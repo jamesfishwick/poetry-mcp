@@ -1,19 +1,16 @@
 """MCP tools for enriching poetry catalog with connections and metadata."""
 
-from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Any
 import logging
 
 from ..models.nexus import NexusRegistry
-from ..models.results import SyncResult
-from ..models.enrichment import ThemeDetectionResult, ThemeSuggestion
 from ..parsers.nexus_parser import load_nexus_registry
 from ..writers.frontmatter_writer import (
     update_poem_tags,
-    FrontmatterUpdateResult,
 )
 from ..catalog.catalog import Catalog
 from ..config import load_config
+
 logger = logging.getLogger(__name__)
 
 # Global state (will be initialized by server)
@@ -54,7 +51,9 @@ async def get_all_nexuses() -> NexusRegistry:
         'water-liquid'
     """
     if _nexus_registry is None:
-        raise RuntimeError("Enrichment tools not initialized. Call initialize_enrichment_tools() first.")
+        raise RuntimeError(
+            "Enrichment tools not initialized. Call initialize_enrichment_tools() first."
+        )
 
     return _nexus_registry
 
@@ -63,7 +62,7 @@ async def link_poem_to_nexus(
     poem_id: str,
     nexus_name: str,
     nexus_type: str = "theme",
-) -> dict[str, any]:
+) -> dict[str, Any]:
     """Link a poem to a nexus by adding the nexus's canonical tag to the poem's frontmatter.
 
     Safely updates the poem's tags field in frontmatter, preserving all other fields.
@@ -94,7 +93,9 @@ async def link_poem_to_nexus(
         'water-liquid'
     """
     if _catalog is None or _nexus_registry is None:
-        raise RuntimeError("Enrichment tools not initialized. Call initialize_enrichment_tools() first.")
+        raise RuntimeError(
+            "Enrichment tools not initialized. Call initialize_enrichment_tools() first."
+        )
 
     # Find the poem
     poem = _catalog.index.get_poem(poem_id)
@@ -139,7 +140,8 @@ async def link_poem_to_nexus(
         }
 
     # Update poem tags
-    poem_path = Path(poem.file_path)
+    # Convert relative path to absolute path
+    poem_path = _catalog.vault_root / poem.file_path
     result = update_poem_tags(
         poem_path,
         tags_to_add=[nexus.canonical_tag],
@@ -207,11 +209,11 @@ async def find_nexuses_for_poem(
     # Load full content if not already loaded
     if not poem.content:
         try:
-            poem_path = Path(poem.file_path)
-            full_content = poem_path.read_text(encoding='utf-8')
+            poem_path = _catalog.vault_root / poem.file_path
+            full_content = poem_path.read_text(encoding="utf-8")
             # Extract just the poem content (after frontmatter)
-            if '---' in full_content:
-                parts = full_content.split('---', 2)
+            if "---" in full_content:
+                parts = full_content.split("---", 2)
                 if len(parts) >= 3:
                     poem.content = parts[2].strip()
                 else:
@@ -228,20 +230,22 @@ async def find_nexuses_for_poem(
     themes_data = []
     for nexus in _nexus_registry.themes:
         # Extract brief description
-        desc_lines = nexus.description.split('\n')
+        desc_lines = nexus.description.split("\n")
         brief_desc = []
         for line in desc_lines:
-            if line.strip() and not line.startswith('#'):
+            if line.strip() and not line.startswith("#"):
                 brief_desc.append(line.strip())
                 if len(brief_desc) >= 3:
                     break
-        brief_text = ' '.join(brief_desc)[:200]
+        brief_text = " ".join(brief_desc)[:200]
 
-        themes_data.append({
-            "name": nexus.name,
-            "canonical_tag": nexus.canonical_tag,
-            "description": brief_text,
-        })
+        themes_data.append(
+            {
+                "name": nexus.name,
+                "canonical_tag": nexus.canonical_tag,
+                "description": brief_text,
+            }
+        )
 
     # Build analysis instructions
     instructions = f"""Analyze this poem and identify which themes it engages with.
@@ -311,8 +315,7 @@ async def get_poems_for_enrichment(
     if poem_ids is None:
         # Default: all poems with no tags or very few tags
         poems_to_return = [
-            poem for poem in _catalog.index.all_poems
-            if not poem.tags or len(poem.tags) < 2
+            poem for poem in _catalog.index.all_poems if not poem.tags or len(poem.tags) < 2
         ]
     else:
         # Specific poem IDs
@@ -332,10 +335,10 @@ async def get_poems_for_enrichment(
         content = poem.content
         if not content:
             try:
-                poem_path = Path(poem.file_path)
-                full_content = poem_path.read_text(encoding='utf-8')
-                if '---' in full_content:
-                    parts = full_content.split('---', 2)
+                poem_path = _catalog.vault_root / poem.file_path
+                full_content = poem_path.read_text(encoding="utf-8")
+                if "---" in full_content:
+                    parts = full_content.split("---", 2)
                     if len(parts) >= 3:
                         content = parts[2].strip()
                     else:
@@ -345,31 +348,37 @@ async def get_poems_for_enrichment(
             except Exception:
                 content = "[Content unavailable]"
 
-        poems_data.append({
-            "id": poem.id,
-            "title": poem.title,
-            "content": content[:500] + "..." if len(content) > 500 else content,  # Truncate for efficiency
-            "current_tags": poem.tags or [],
-            "state": poem.state,
-        })
+        poems_data.append(
+            {
+                "id": poem.id,
+                "title": poem.title,
+                "content": (
+                    content[:500] + "..." if len(content) > 500 else content
+                ),  # Truncate for efficiency
+                "current_tags": poem.tags or [],
+                "state": poem.state,
+            }
+        )
 
     # Format available themes
     themes_data = []
     for nexus in _nexus_registry.themes:
-        desc_lines = nexus.description.split('\n')
+        desc_lines = nexus.description.split("\n")
         brief_desc = []
         for line in desc_lines:
-            if line.strip() and not line.startswith('#'):
+            if line.strip() and not line.startswith("#"):
                 brief_desc.append(line.strip())
                 if len(brief_desc) >= 2:
                     break
-        brief_text = ' '.join(brief_desc)[:150]
+        brief_text = " ".join(brief_desc)[:150]
 
-        themes_data.append({
-            "name": nexus.name,
-            "canonical_tag": nexus.canonical_tag,
-            "description": brief_text,
-        })
+        themes_data.append(
+            {
+                "name": nexus.name,
+                "canonical_tag": nexus.canonical_tag,
+                "description": brief_text,
+            }
+        )
 
     instructions = """Analyze these poems and suggest themes for each.
 
@@ -439,9 +448,9 @@ async def sync_nexus_tags(
         }
 
     # Load full content
-    poem_path = Path(poem.file_path)
+    poem_path = _catalog.vault_root / poem.file_path
     try:
-        full_content = poem_path.read_text(encoding='utf-8')
+        full_content = poem_path.read_text(encoding="utf-8")
     except Exception as e:
         return {
             "success": False,
@@ -450,6 +459,7 @@ async def sync_nexus_tags(
 
     # Extract frontmatter and body
     from ..writers.frontmatter_writer import extract_frontmatter_and_content
+
     try:
         frontmatter, body = extract_frontmatter_and_content(full_content, poem_path)
     except Exception as e:
@@ -459,10 +469,10 @@ async def sync_nexus_tags(
         }
 
     # Get current tags
-    current_tags = set(frontmatter.get('tags', []))
+    current_tags = set(frontmatter.get("tags", []))
 
     # Find all [[Nexus Name]] style links in body
-    wikilink_pattern = r'\[\[([^\]]+)\]\]'
+    wikilink_pattern = r"\[\[([^\]]+)\]\]"
     wikilinks = set(re.findall(wikilink_pattern, body))
 
     # Map wikilinks to canonical tags
@@ -470,7 +480,7 @@ async def sync_nexus_tags(
     for link in wikilinks:
         # Try to find matching nexus
         link_lower = link.lower()
-        for nexus in (_nexus_registry.themes + _nexus_registry.motifs + _nexus_registry.forms):
+        for nexus in _nexus_registry.themes + _nexus_registry.motifs + _nexus_registry.forms:
             if link_lower in nexus.name.lower():
                 links_to_tags[link] = nexus.canonical_tag
                 break
@@ -478,20 +488,20 @@ async def sync_nexus_tags(
     # Map current tags to nexus names
     tags_to_names = {}
     for tag in current_tags:
-        for nexus in (_nexus_registry.themes + _nexus_registry.motifs + _nexus_registry.forms):
+        for nexus in _nexus_registry.themes + _nexus_registry.motifs + _nexus_registry.forms:
             if tag == nexus.canonical_tag:
                 tags_to_names[tag] = nexus.name
                 break
 
     # Determine what changes to make based on direction
-    tags_to_add = []
-    conflicts = []
+    tags_to_add: List[str] = []
+    conflicts: List[str] = []
     changes_made = False
 
     if direction in ["links_to_tags", "both"]:
         # Add tags based on links found
         for link, tag in links_to_tags.items():
-            if tag not in current_tags:
+            if tag and tag not in current_tags:  # Guard against None
                 tags_to_add.append(tag)
                 changes_made = True
 
@@ -504,12 +514,15 @@ async def sync_nexus_tags(
         # Check for tags that don't have corresponding links
         for tag, name in tags_to_names.items():
             # Check if link exists in body
-            if name not in wikilinks and not any(name.lower() in link.lower() for link in wikilinks):
+            if name not in wikilinks and not any(
+                name.lower() in link.lower() for link in wikilinks
+            ):
                 conflicts.append(f"Tag #{tag} ({name}) has no corresponding [[link]] in body")
 
     # Apply tag changes if any
     if tags_to_add:
         from ..writers.frontmatter_writer import update_poem_tags
+
         result = update_poem_tags(
             poem_path,
             tags_to_add=tags_to_add,
@@ -620,7 +633,7 @@ async def move_poem_to_state(
     # Get paths
     config = load_config()
     catalog_root = config.vault.path / "catalog"
-    old_path = Path(poem.file_path)
+    old_path = _catalog.vault_root / poem.file_path
     new_dir = catalog_root / state_to_dir[new_state]
     new_path = new_dir / old_path.name
 
@@ -637,6 +650,7 @@ async def move_poem_to_state(
     try:
         # Update frontmatter first (before moving)
         from ..writers.frontmatter_writer import update_poem_frontmatter
+
         fm_result = update_poem_frontmatter(
             old_path,
             updates={"state": new_state},
@@ -653,8 +667,8 @@ async def move_poem_to_state(
         shutil.move(str(old_path), str(new_path))
 
         # Also move backup if it exists
-        backup_path = old_path.with_suffix(old_path.suffix + '.bak')
-        new_backup_path = new_path.with_suffix(new_path.suffix + '.bak')
+        backup_path = old_path.with_suffix(old_path.suffix + ".bak")
+        new_backup_path = new_path.with_suffix(new_path.suffix + ".bak")
         if backup_path.exists():
             shutil.move(str(backup_path), str(new_backup_path))
 
@@ -733,10 +747,10 @@ async def grade_poem_quality(
     content = poem.content
     if not content:
         try:
-            poem_path = Path(poem.file_path)
-            full_content = poem_path.read_text(encoding='utf-8')
-            if '---' in full_content:
-                parts = full_content.split('---', 2)
+            poem_path = _catalog.vault_root / poem.file_path
+            full_content = poem_path.read_text(encoding="utf-8")
+            if "---" in full_content:
+                parts = full_content.split("---", 2)
                 if len(parts) >= 3:
                     content = parts[2].strip()
                 else:
@@ -774,8 +788,7 @@ async def grade_poem_quality(
 
     # Format dimensions for agent
     dimensions_data = [
-        {"name": name, "description": desc}
-        for name, desc in dimensions_to_grade.items()
+        {"name": name, "description": desc} for name, desc in dimensions_to_grade.items()
     ]
 
     instructions = """Grade this poem on each quality dimension.
@@ -791,7 +804,9 @@ For each dimension, provide:
 
 Be precise and evidence-based. Reference specific techniques or lines when explaining scores."""
 
-    logger.info(f"Prepared quality grading data for '{poem.title}' ({len(dimensions_to_grade)} dimensions)")
+    logger.info(
+        f"Prepared quality grading data for '{poem.title}' ({len(dimensions_to_grade)} dimensions)"
+    )
 
     return {
         "success": True,

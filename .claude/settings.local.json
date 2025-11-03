@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/jamesfishwick/.local/share/obsidian/art/Poetry/**)",
+      "mcp__serena__initial_instructions",
+      "mcp__serena__get_current_config",
+      "mcp__serena__activate_project",
+      "mcp__serena__list_memories",
+      "mcp__serena__write_memory",
+      "mcp__interactive__message_complete_notification",
+      "mcp__serena__list_dir",
+      "mcp__serena__find_file",
+      "Read(//Users/jamesfishwick/.claude/**)",
+      "mcp__serena__search_for_pattern",
+      "Read(//Users/jamesfishwick/Library/Application Support/Claude/**)",
+      "Read(//Users/jamesfishwick/.config/claude-code/**)",
+      "Read(//Users/jamesfishwick/Desktop/**)",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__find_symbol",
+      "Read(//var/folders/6_/k1ncrj8j4tsb6p_3h73hk67r0000gn/T/TemporaryItems/NSIRD_screencaptureui_jRHNUq/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,51 @@
+# Poetry MCP Configuration File
+# Copy this to ~/.config/poetry-mcp/config.yaml and customize
+
+vault:
+  # Absolute path to your Poetry vault root
+  path: /path/to/your/Poetry/vault
+
+  # Subdirectory names (relative to vault path)
+  catalog_dir: catalog
+  nexus_dir: nexus
+  qualities_dir: Qualities
+  venues_dir: venues
+  influences_dir: influences
+
+  # Optional: Exclude specific catalog subdirectories from scanning
+  # Use this for directories you want the server to ignore completely
+  # Example: exclude_catalog_dirs: ['drafts', 'archive', 'trash']
+  exclude_catalog_dirs: []
+
+  # Optional: Custom states beyond the standard ones
+  # Use this for valid poem states that aren't in the default list
+  # Example: custom_states: ['phone_poetry', 'voice_memos']
+  custom_states: []
+
+search:
+  # Default number of results to return
+  default_limit: 20
+
+  # Case-sensitive search
+  case_sensitive: false
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+
+  # Log file path (null = console only)
+  file: null
+  # file: ~/.config/poetry-mcp/poetry-mcp.log
+
+  # Log message format
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+performance:
+  # Enable file watching for auto-reload (requires watchdog library)
+  watch_files: false
+
+  # Debounce time for file watching (seconds)
+  watch_debounce_seconds: 2.0
+
+  # Cache expiry time (seconds)
+  cache_expiry_seconds: 3600

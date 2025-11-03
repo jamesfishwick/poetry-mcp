@@ -12,8 +12,8 @@ from typing import Optional
 import yaml
 from pydantic import ValidationError
 
-from poetry_mcp.models import Venue, Submission, SubmissionStatus
-from poetry_mcp.errors import ParseError
+from poetry_mcp.models import Venue, Submission
+from poetry_mcp.errors import BaseParseError as ParseError
 
 
 class VenueParser:
@@ -39,7 +39,7 @@ class VenueParser:
         if not file_path.exists():
             raise ParseError(f"Venue file not found: {file_path}")
 
-        content = file_path.read_text(encoding='utf-8')
+        content = file_path.read_text(encoding="utf-8")
 
         # Extract venue metadata from frontmatter
         venue = self._parse_venue_metadata(content, file_path)
@@ -52,7 +52,7 @@ class VenueParser:
     def _parse_venue_metadata(self, content: str, file_path: Path) -> Venue:
         """Extract Venue model from frontmatter."""
         # Extract YAML frontmatter
-        match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+        match = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
         if not match:
             raise ParseError(f"No frontmatter found in {file_path}")
 
@@ -65,7 +65,7 @@ class VenueParser:
             raise ParseError(f"Frontmatter must be a dict in {file_path}")
 
         # Add file path for roundtrip editing
-        frontmatter['file_path'] = str(file_path)
+        frontmatter["file_path"] = str(file_path)
 
         try:
             return Venue(**frontmatter)
@@ -73,16 +73,13 @@ class VenueParser:
             raise ParseError(f"Invalid venue metadata in {file_path}: {e}")
 
     def _parse_submissions(
-        self,
-        content: str,
-        venue_name: str,
-        file_path: Path
+        self, content: str, venue_name: str, file_path: Path
     ) -> list[Submission]:
         """Extract Submission records from markdown tables."""
         submissions = []
 
         # Find all tables and their section headers
-        lines = content.split('\n')
+        lines = content.split("\n")
         current_section = None
         in_table = False
         table_headers = []
@@ -91,46 +88,42 @@ class VenueParser:
             line_stripped = line.strip()
 
             # Detect section headers
-            if line_stripped.startswith('### 📋 Planned'):
-                current_section = 'planned'
+            if line_stripped.startswith("### 📋 Planned"):
+                current_section = "planned"
                 in_table = False
                 continue
-            elif line_stripped.startswith('### 📤 Submitted'):
-                current_section = 'submitted'
+            elif line_stripped.startswith("### 📤 Submitted"):
+                current_section = "submitted"
                 in_table = False
                 continue
-            elif line_stripped.startswith('### ✅ Accepted'):
-                current_section = 'accepted'
+            elif line_stripped.startswith("### ✅ Accepted"):
+                current_section = "accepted"
                 in_table = False
                 continue
-            elif line_stripped.startswith('### ❌ Rejected'):
-                current_section = 'rejected'
+            elif line_stripped.startswith("### ❌ Rejected"):
+                current_section = "rejected"
                 in_table = False
                 continue
-            elif line_stripped.startswith('###') or line_stripped.startswith('##'):
+            elif line_stripped.startswith("###") or line_stripped.startswith("##"):
                 current_section = None
                 in_table = False
                 continue
 
             # Detect table start
-            if current_section and line_stripped.startswith('|'):
+            if current_section and line_stripped.startswith("|"):
                 if not in_table:
                     # First row is headers
-                    table_headers = [h.strip() for h in line_stripped.split('|')[1:-1]]
+                    table_headers = [h.strip() for h in line_stripped.split("|")[1:-1]]
                     in_table = True
-                elif '---' in line_stripped:
+                elif "---" in line_stripped:
                     # Separator row, skip
                     continue
                 else:
                     # Data row
-                    cols = [c.strip() for c in line_stripped.split('|')[1:-1]]
-                    if len(cols) >= 2 and cols[0] not in ('-', ''):
+                    cols = [c.strip() for c in line_stripped.split("|")[1:-1]]
+                    if len(cols) >= 2 and cols[0] not in ("-", ""):
                         submission = self._parse_table_row(
-                            cols,
-                            table_headers,
-                            current_section,
-                            venue_name,
-                            file_path
+                            cols, table_headers, current_section, venue_name, file_path
                         )
                         if submission:
                             submissions.append(submission)
@@ -138,55 +131,53 @@ class VenueParser:
         return submissions
 
     def _parse_table_row(
-        self,
-        cols: list[str],
-        headers: list[str],
-        status: str,
-        venue_name: str,
-        file_path: Path
+        self, cols: list[str], headers: list[str], status: str, venue_name: str, file_path: Path
     ) -> Optional[Submission]:
         """Parse a single table row into a Submission."""
         # Create dict mapping headers to values
         row_data = {h.lower(): v for h, v in zip(headers, cols)}
 
         # Extract poems (first column, comma-separated)
-        poems_str = cols[0] if cols else ''
-        if not poems_str or poems_str == '-':
+        poems_str = cols[0] if cols else ""
+        if not poems_str or poems_str == "-":
             return None
 
-        poems = [p.strip() for p in poems_str.split(',') if p.strip()]
+        poems = [p.strip() for p in poems_str.split(",") if p.strip()]
         if not poems:
             return None
 
         # Build submission data based on status
         submission_data = {
-            'venue_name': venue_name,
-            'poems': poems,
-            'status': status,
-            'submitted': status in ('submitted', 'accepted', 'rejected'),
-            'source_file': str(file_path)
+            "venue_name": venue_name,
+            "poems": poems,
+            "status": status,
+            "submitted": status in ("submitted", "accepted", "rejected"),
+            "source_file": str(file_path),
         }
 
         # Map common column names to fields
-        date_field = row_data.get('submitted', row_data.get('submitted date'))
-        if date_field and date_field != '-':
-            submission_data['submitted_date'] = date_field
+        date_field = row_data.get("submitted", row_data.get("submitted date"))
+        if date_field and date_field != "-":
+            submission_data["submitted_date"] = date_field
 
-        due_field = row_data.get('due date')
-        if due_field and due_field != '-':
-            submission_data['due_date'] = due_field
+        due_field = row_data.get("due date")
+        if due_field and due_field != "-":
+            submission_data["due_date"] = due_field
 
-        response_field = row_data.get('expected response', row_data.get('response', row_data.get('accepted')))
-        if response_field and response_field != '-':
-            submission_data['response_date'] = response_field
+        response_field = row_data.get(
+            "expected response",
+            row_data.get("response", row_data.get("response by", row_data.get("accepted"))),
+        )
+        if response_field and response_field != "-":
+            submission_data["response_date"] = response_field
 
-        cost_field = row_data.get('cost')
-        if cost_field and cost_field != '-':
-            submission_data['cost'] = cost_field
+        cost_field = row_data.get("cost")
+        if cost_field and cost_field != "-":
+            submission_data["cost"] = cost_field
 
-        notes_field = row_data.get('notes')
-        if notes_field and notes_field != '-':
-            submission_data['notes'] = notes_field
+        notes_field = row_data.get("notes")
+        if notes_field and notes_field != "-":
+            submission_data["notes"] = notes_field
 
         try:
             return Submission(**submission_data)
@@ -223,7 +214,7 @@ class VenueRegistry:
         self.venues.clear()
         self.submissions.clear()
 
-        for md_file in self.venues_dir.glob('*.md'):
+        for md_file in self.venues_dir.glob("*.md"):
             try:
                 venue, submissions = self.parser.parse_file(md_file)
                 self.venues[venue.name] = venue
@@ -245,4 +236,4 @@ class VenueRegistry:
 
     def get_planned_submissions(self) -> list[Submission]:
         """Get all planned (not yet submitted) submissions."""
-        return [s for s in self.submissions if s.status == 'planned']
+        return [s for s in self.submissions if s.status == "planned"]

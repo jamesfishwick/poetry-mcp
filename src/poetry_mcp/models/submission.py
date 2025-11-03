@@ -6,16 +6,16 @@ when, to where, and what the outcome was.
 """
 
 from typing import Optional, Literal
-from datetime import datetime, date
+from datetime import date
 from pydantic import BaseModel, Field, validator
 
 
 SubmissionStatus = Literal[
-    "planned",      # Considering for this venue, not yet submitted
-    "submitted",    # Submitted and awaiting response
-    "accepted",     # Accepted for publication
-    "rejected",     # Rejected
-    "withdrawn"     # Withdrawn by author before decision
+    "planned",  # Considering for this venue, not yet submitted
+    "submitted",  # Submitted and awaiting response
+    "accepted",  # Accepted for publication
+    "rejected",  # Rejected
+    "withdrawn",  # Withdrawn by author before decision
 ]
 
 
@@ -31,80 +31,65 @@ class Submission(BaseModel):
     venue_name: str = Field(
         ...,
         description="Name of the venue this submission is for",
-        examples=["Palette Poetry", "Rattle", "The Georgia Review"]
+        examples=["Palette Poetry", "Rattle", "The Georgia Review"],
     )
 
     poems: list[str] = Field(
         ...,
         description="List of poem titles included in this submission",
         min_items=1,
-        examples=[
-            ["Second Bridge Out Old Route 12"],
-            ["Dead Deer", "Black Bread", "The Formula"]
-        ]
+        examples=[["Second Bridge Out Old Route 12"], ["Dead Deer", "Black Bread", "The Formula"]],
     )
 
     # Submission lifecycle
-    status: SubmissionStatus = Field(
-        "planned",
-        description="Current status of this submission"
-    )
+    status: SubmissionStatus = Field("planned", description="Current status of this submission")
 
     submitted: bool = Field(
-        False,
-        description="Whether this has actually been submitted (vs. planned)"
+        False, description="Whether this has actually been submitted (vs. planned)"
     )
 
     # Dates
     submitted_date: Optional[date | str] = Field(
-        None,
-        description="Date when submission was sent",
-        examples=["2025-08-15", "2025-August"]
+        None, description="Date when submission was sent", examples=["2025-08-15", "2025-August"]
     )
 
     due_date: Optional[date | str] = Field(
         None,
         description="Submission deadline (for planned submissions)",
-        examples=["2025-10-31", "2025-October"]
+        examples=["2025-10-31", "2025-October"],
     )
 
     response_date: Optional[date | str] = Field(
         None,
         description="Expected response date or actual response date",
-        examples=["2025-11-15", "2025-November"]
+        examples=["2025-11-15", "2025-November"],
     )
 
     # Financial
     cost: Optional[str] = Field(
-        None,
-        description="Reading fee or submission cost",
-        examples=["$3", "free", "$5"]
+        None, description="Reading fee or submission cost", examples=["$3", "free", "$5"]
     )
 
     # Additional context
-    notes: Optional[str] = Field(
-        None,
-        description="Additional notes about this submission"
-    )
+    notes: Optional[str] = Field(None, description="Additional notes about this submission")
 
     # Source tracking for debugging/auditing
     source_file: Optional[str] = Field(
-        None,
-        description="Source file where this submission was parsed from"
+        None, description="Source file where this submission was parsed from"
     )
 
-    @validator('status', always=True)
-    def sync_status_with_submitted(cls, v, values):
+    @validator("status", always=True)
+    def sync_status_with_submitted(cls, v: str, values: dict) -> str:
         """Ensure status and submitted flag are consistent."""
-        submitted = values.get('submitted', False)
+        submitted: bool = values.get("submitted", False)  # type: ignore
 
         # If submitted=True but status is 'planned', upgrade to 'submitted'
-        if submitted and v == 'planned':
-            return 'submitted'
+        if submitted and v == "planned":
+            return "submitted"
 
         # If status is 'submitted'/'accepted'/'rejected' but submitted=False, fix it
-        if v in ('submitted', 'accepted', 'rejected') and not submitted:
-            values['submitted'] = True
+        if v in ("submitted", "accepted", "rejected") and not submitted:
+            values["submitted"] = True
 
         return v
 
@@ -116,15 +101,16 @@ class Submission(BaseModel):
     @property
     def is_active(self) -> bool:
         """Whether this submission is actively pending response."""
-        return self.status == 'submitted' and self.submitted
+        return self.status == "submitted" and self.submitted
 
     @property
     def is_completed(self) -> bool:
         """Whether this submission has reached a final state."""
-        return self.status in ('accepted', 'rejected', 'withdrawn')
+        return self.status in ("accepted", "rejected", "withdrawn")
 
     class Config:
         """Pydantic model configuration."""
+
         json_schema_extra = {
             "examples": [
                 {
@@ -135,7 +121,7 @@ class Submission(BaseModel):
                     "submitted_date": "2025-07-15",
                     "response_date": "2025-10-15",
                     "cost": "$3",
-                    "notes": None
+                    "notes": None,
                 },
                 {
                     "venue_name": "Frontier Poetry",
@@ -144,8 +130,8 @@ class Submission(BaseModel):
                     "submitted": False,
                     "due_date": "2025-11-01",
                     "cost": "free",
-                    "notes": "Good fit for experimental work"
-                }
+                    "notes": "Good fit for experimental work",
+                },
             ]
         }
 
@@ -157,33 +143,27 @@ class SubmissionSummary(BaseModel):
     Useful for dashboard views and reporting.
     """
 
-    total_submissions: int = Field(
-        ...,
-        description="Total number of submission records"
-    )
+    total_submissions: int = Field(..., description="Total number of submission records")
 
     by_status: dict[SubmissionStatus, int] = Field(
-        default_factory=dict,
-        description="Count of submissions by status"
+        default_factory=dict, description="Count of submissions by status"
     )
 
     active_submissions: int = Field(
-        0,
-        description="Number of submissions currently pending response"
+        0, description="Number of submissions currently pending response"
     )
 
     total_poems_submitted: int = Field(
-        0,
-        description="Total number of individual poems across all submissions"
+        0, description="Total number of individual poems across all submissions"
     )
 
     acceptance_rate: Optional[float] = Field(
-        None,
-        description="Percentage of completed submissions that were accepted"
+        None, description="Percentage of completed submissions that were accepted"
     )
 
     class Config:
         """Pydantic model configuration."""
+
         json_schema_extra = {
             "example": {
                 "total_submissions": 25,
@@ -192,10 +172,10 @@ class SubmissionSummary(BaseModel):
                     "submitted": 8,
                     "accepted": 3,
                     "rejected": 9,
-                    "withdrawn": 0
+                    "withdrawn": 0,
                 },
                 "active_submissions": 8,
                 "total_poems_submitted": 67,
-                "acceptance_rate": 25.0
+                "acceptance_rate": 25.0,
             }
         }

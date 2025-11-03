@@ -5,7 +5,7 @@ FastMCP server providing tools for poetry catalog and nexus management.
 
 import logging
 import sys
-from typing import Optional, List
+from typing import Optional, List, Any
 
 # Check Python version before any imports
 if sys.version_info < (3, 10):
@@ -34,8 +34,7 @@ from .tools.enrichment_tools import (
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -53,8 +52,16 @@ def get_catalog() -> Catalog:
     if catalog is None:
         logger.info("Initializing catalog...")
         config = load_config()
-        catalog = Catalog(vault_root=config.vault.path)
+        catalog = Catalog(
+            vault_root=config.vault.path,
+            exclude_dirs=config.vault.exclude_catalog_dirs,
+            custom_states=config.vault.custom_states,
+        )
         logger.info(f"Catalog initialized with vault: {config.vault.path}")
+        if config.vault.exclude_catalog_dirs:
+            logger.info(f"Excluding directories: {config.vault.exclude_catalog_dirs}")
+        if config.vault.custom_states:
+            logger.info(f"Custom states enabled: {config.vault.custom_states}")
 
     return catalog
 
@@ -81,10 +88,7 @@ async def sync_catalog(force_rescan: bool = False) -> SyncResult:
 
 
 @mcp.tool()
-async def get_poem(
-    identifier: str,
-    include_content: bool = True
-) -> Optional[Poem]:
+async def get_poem(identifier: str, include_content: bool = True) -> Optional[Poem]:
     """
     Get a poem by ID or title.
 
@@ -107,7 +111,7 @@ async def get_poem(
     if poem and not include_content:
         # Return copy without content
         poem_dict = poem.model_dump()
-        poem_dict['content'] = None
+        poem_dict["content"] = None
         poem = Poem(**poem_dict)
 
     return poem
@@ -119,8 +123,8 @@ async def search_poems(
     states: Optional[List[str]] = None,
     forms: Optional[List[str]] = None,
     tags: Optional[List[str]] = None,
-    limit: int = 20,
-    include_content: bool = False
+    limit: Optional[int] = None,
+    include_content: bool = False,
 ) -> SearchResult:
     """
     Search for poems matching criteria.
@@ -130,20 +134,26 @@ async def search_poems(
         states: Filter by states (e.g., ["completed", "fledgeling"])
         forms: Filter by forms (e.g., ["free_verse", "prose_poem"])
         tags: Filter by tags (poems must have all specified tags)
-        limit: Maximum number of results to return
+        limit: Maximum number of results to return (default from config)
         include_content: Whether to include full poem text in results
 
     Returns:
         SearchResult with matched poems and query metadata
     """
     import time
+
     start_time = time.perf_counter()
 
     cat = get_catalog()
+    config = load_config()
+
+    # Use config defaults
+    if limit is None:
+        limit = config.search.default_limit
 
     # Start with text search if query provided
     if query:
-        results = cat.index.search_content(query, case_sensitive=False)
+        results = cat.index.search_content(query, case_sensitive=config.search.case_sensitive)
     else:
         # No query, start with all poems
         results = cat.index.all_poems.copy()
@@ -159,14 +169,15 @@ async def search_poems(
     # Apply tag filter (must have all tags)
     if tags:
         results = [
-            p for p in results
-            if all(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
+            p for p in results if all(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
         ]
 
     # Sort by relevance (poems with more tag matches first)
     if tags:
+
         def relevance_score(poem: Poem) -> int:
             return sum(1 for tag in tags if tag.lower() in [t.lower() for t in poem.tags])
+
         results.sort(key=relevance_score, reverse=True)
 
     # Limit results
@@ -175,26 +186,16 @@ async def search_poems(
 
     # Remove content if not requested
     if not include_content:
-        results = [
-            Poem(**{**p.model_dump(), 'content': None})
-            for p in results
-        ]
+        results = [Poem(**{**p.model_dump(), "content": None}) for p in results]
 
     query_time_ms = (time.perf_counter() - start_time) * 1000
 
-    return SearchResult(
-        poems=results,
-        total_matches=total_matches,
-        query_time_ms=query_time_ms
-    )
+    return SearchResult(poems=results, total_matches=total_matches, query_time_ms=query_time_ms)
 
 
 @mcp.tool()
 async def find_poems_by_tag(
-    tags: List[str],
-    match_mode: str = "all",
-    states: Optional[List[str]] = None,
-    limit: int = 20
+    tags: List[str], match_mode: str = "all", states: Optional[List[str]] = None, limit: int = 20
 ) -> List[Poem]:
     """
     Find poems by tags.
@@ -221,20 +222,13 @@ async def find_poems_by_tag(
     poems = poems[:limit]
 
     # Remove content for efficiency
-    poems = [
-        Poem(**{**p.model_dump(), 'content': None})
-        for p in poems
-    ]
+    poems = [Poem(**{**p.model_dump(), "content": None}) for p in poems]
 
     return poems
 
 
 @mcp.tool()
-async def list_poems_by_state(
-    state: str,
-    sort_by: str = "title",
-    limit: int = 100
-) -> List[Poem]:
+async def list_poems_by_state(state: str, sort_by: str = "title", limit: int = 100) -> List[Poem]:
     """
     List poems in a specific state.
 
@@ -264,10 +258,7 @@ async def list_poems_by_state(
     poems = poems[:limit]
 
     # Remove content
-    poems = [
-        Poem(**{**p.model_dump(), 'content': None})
-        for p in poems
-    ]
+    poems = [Poem(**{**p.model_dump(), "content": None}) for p in poems]
 
     return poems
 
@@ -299,11 +290,12 @@ async def get_server_info() -> dict:
         "version": "0.1.0",
         "vault_path": str(config.vault.path),
         "catalog_loaded": catalog is not None,
-        "total_poems": len(catalog.index.all_poems) if catalog else 0
+        "total_poems": len(catalog.index.all_poems) if catalog else 0,
     }
 
 
 # ===== Enrichment Tools =====
+
 
 @mcp.tool()
 async def get_all_nexuses() -> NexusRegistry:
@@ -540,7 +532,360 @@ async def grade_poem_quality(
     return await _grade_poem_quality(poem_id, dimensions)
 
 
-def main():
+def commit_quality_scores_impl(
+    poem_id: str,
+    scores: dict,
+    notes: Optional[str] = None,
+    catalog: Optional[Any] = None,
+) -> dict:
+    """
+    Implementation of quality score committing logic.
+
+    Extracted for testability. See commit_quality_scores() for full documentation.
+    """
+    cat = catalog if catalog else get_catalog()
+
+    # Get poem
+    poem = cat.index.get_by_id(poem_id)
+    if not poem:
+        poem = cat.index.get_by_title(poem_id)
+    if not poem:
+        return {"success": False, "error": f"Poem not found: {poem_id}"}
+
+    # Validate scores
+    valid_dimensions = {
+        "detail",
+        "life",
+        "music",
+        "mystery",
+        "sufficient thought",
+        "surprise",
+        "syntax",
+        "unity",
+    }
+
+    normalized_scores = {}
+    for dimension, score in scores.items():
+        dim_lower = dimension.lower().strip()
+        if dim_lower not in valid_dimensions:
+            return {
+                "success": False,
+                "error": f"Invalid dimension '{dimension}'. Valid: {sorted(valid_dimensions)}",
+            }
+        if not isinstance(score, int) or score < 0 or score > 10:
+            return {
+                "success": False,
+                "error": f"Score for '{dimension}' must be integer 0-10, got: {score}",
+            }
+        normalized_scores[dim_lower] = score
+
+    # Read and update file
+    from pathlib import Path
+    from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
+
+    vault_root = Path(cat.vault_root)
+    file_path = vault_root / poem.file_path
+
+    if not file_path.exists():
+        return {"success": False, "error": f"Poem file not found: {file_path}"}
+
+    # Read current content
+    content = file_path.read_text(encoding="utf-8")
+    frontmatter, body = extract_frontmatter(content, file_path)
+
+    # Update qualities
+    frontmatter["qualities"] = normalized_scores
+    if notes:
+        frontmatter["quality_notes"] = notes
+
+    # Write back
+    import yaml
+
+    fm_yaml = yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True)
+    new_content = f"---\n{fm_yaml}---\n{body}"
+
+    # Create backup
+    backup_path = Path(str(file_path) + ".bak")
+    file_path.write_text(content, encoding="utf-8")  # Backup as .bak
+    import shutil
+
+    shutil.copy2(file_path, backup_path)
+
+    # Write new content
+    file_path.write_text(new_content, encoding="utf-8")
+
+    # Resync catalog
+    cat.sync()
+
+    logger.info(f"Committed quality scores for '{poem.title}': {normalized_scores}")
+
+    return {
+        "success": True,
+        "poem_id": poem.id,
+        "scores_committed": normalized_scores,
+        "notes": notes,
+        "file_path": str(file_path),
+    }
+
+
+@mcp.tool()
+async def commit_quality_scores(
+    poem_id: str,
+    scores: dict,
+    notes: Optional[str] = None,
+) -> dict:
+    """
+    Write quality scores to poem frontmatter after agent grading.
+
+    After YOU grade a poem using grade_poem_quality(), use this tool to save
+    your scores to the poem's frontmatter.
+
+    Args:
+        poem_id: Poem identifier (ID or title)
+        scores: Dictionary of dimension name → score (0-10)
+                Example: {"detail": 8, "life": 7, "music": 6}
+        notes: Optional grading notes or reasoning summary
+
+    Returns:
+        Dictionary with:
+        - success: Boolean indicating if save succeeded
+        - poem_id: ID of the graded poem
+        - scores_committed: The scores that were written
+        - file_path: Path to the updated file
+
+    Example:
+        ```
+        # After grading with grade_poem_quality
+        result = await commit_quality_scores(
+            poem_id="antlion",
+            scores={
+                "detail": 8,
+                "life": 7,
+                "music": 6,
+                "mystery": 9,
+                "sufficient thought": 8,
+                "surprise": 7,
+                "syntax": 8,
+                "unity": 9
+            },
+            notes="Strong imagery and mystery, adequate music"
+        )
+        ```
+    """
+    return commit_quality_scores_impl(poem_id, scores, notes)
+
+
+def get_quality_scores_impl(
+    poem_id: str,
+    catalog: Optional[Any] = None,
+) -> dict:
+    """
+    Implementation of quality score retrieval logic.
+
+    Extracted for testability. See get_quality_scores() for full documentation.
+    """
+    cat = catalog if catalog else get_catalog()
+
+    # Get poem
+    poem = cat.index.get_by_id(poem_id)
+    if not poem:
+        poem = cat.index.get_by_title(poem_id)
+    if not poem:
+        return {"success": False, "error": f"Poem not found: {poem_id}"}
+
+    scores = poem.qualities if poem.qualities else {}
+
+    # Read quality notes if present
+    from pathlib import Path
+    from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
+
+    vault_root = Path(cat.vault_root)
+    file_path = vault_root / poem.file_path
+
+    notes = None
+    if file_path.exists():
+        content = file_path.read_text(encoding="utf-8")
+        frontmatter, _ = extract_frontmatter(content, file_path)
+        notes = frontmatter.get("quality_notes")
+
+    return {
+        "success": True,
+        "poem_id": poem.id,
+        "poem_title": poem.title,
+        "scores": scores,
+        "notes": notes,
+        "has_scores": len(scores) > 0,
+    }
+
+
+@mcp.tool()
+async def get_quality_scores(
+    poem_id: str,
+) -> dict:
+    """
+    Retrieve existing quality scores from a poem's frontmatter.
+
+    Args:
+        poem_id: Poem identifier (ID or title)
+
+    Returns:
+        Dictionary with:
+        - success: Boolean
+        - poem_id: ID of the poem
+        - poem_title: Title of the poem
+        - scores: Dictionary of dimension → score (or None if unscored)
+        - notes: Optional grading notes
+
+    Example:
+        ```
+        result = await get_quality_scores("antlion")
+        if result['success']:
+            for dim, score in result['scores'].items():
+                print(f"{dim}: {score}/10")
+        ```
+    """
+    return get_quality_scores_impl(poem_id)
+
+
+def find_high_scoring_poems_impl(
+    qualities: List[str],
+    min_score: int = 8,
+    states: Optional[List[str]] = None,
+    limit: int = 20,
+    catalog: Optional[Any] = None,
+) -> dict:
+    """
+    Implementation of high-scoring poem finding logic.
+
+    Extracted for testability. See find_high_scoring_poems() for full documentation.
+    """
+    cat = catalog if catalog else get_catalog()
+
+    # Normalize quality names
+    valid_dimensions = {
+        "detail",
+        "life",
+        "music",
+        "mystery",
+        "sufficient thought",
+        "surprise",
+        "syntax",
+        "unity",
+    }
+
+    normalized_qualities = []
+    for q in qualities:
+        q_lower = q.lower().strip()
+        if q_lower not in valid_dimensions:
+            return {
+                "success": False,
+                "error": f"Invalid quality dimension '{q}'. Valid: {sorted(valid_dimensions)}",
+            }
+        normalized_qualities.append(q_lower)
+
+    # Filter poems
+    matching_poems = []
+
+    for poem in cat.index.all_poems:
+        # State filter
+        if states and poem.state not in states:
+            continue
+
+        # Must have quality scores
+        if not poem.qualities:
+            continue
+
+        # Check if poem scores meet threshold on all requested dimensions
+        matches_all = True
+        dimension_scores = {}
+
+        for quality in normalized_qualities:
+            score = poem.qualities.get(quality)
+            if score is None or score < min_score:
+                matches_all = False
+                break
+            dimension_scores[quality] = score
+
+        if matches_all:
+            # Calculate average score across requested dimensions
+            avg_score = sum(dimension_scores.values()) / len(dimension_scores)
+
+            matching_poems.append(
+                {
+                    "id": poem.id,
+                    "title": poem.title,
+                    "state": poem.state,
+                    "form": poem.form,
+                    "scores": dimension_scores,
+                    "avg_score": round(avg_score, 1),
+                    "all_scores": poem.qualities,
+                }
+            )
+
+    # Sort by average score (descending)
+    matching_poems.sort(key=lambda p: p["avg_score"], reverse=True)  # type: ignore[arg-type,return-value]
+
+    # Apply limit
+    limited_poems = matching_poems[:limit]
+
+    logger.info(f"Found {len(matching_poems)} poems scoring {min_score}+ on {normalized_qualities}")
+
+    return {
+        "success": True,
+        "poems": limited_poems,
+        "total_matches": len(matching_poems),
+        "returned": len(limited_poems),
+        "query": {
+            "qualities": normalized_qualities,
+            "min_score": min_score,
+            "states": states,
+            "limit": limit,
+        },
+    }
+
+
+@mcp.tool()
+async def find_high_scoring_poems(
+    qualities: List[str],
+    min_score: int = 8,
+    states: Optional[List[str]] = None,
+    limit: int = 20,
+) -> dict:
+    """
+    Find poems with high scores on specified quality dimensions.
+
+    Args:
+        qualities: List of quality dimensions to filter on
+                   Example: ["detail", "mystery"]
+        min_score: Minimum score threshold (0-10), default 8
+        states: Optional list of states to filter by (e.g., ["completed"])
+        limit: Maximum number of results (default 20)
+
+    Returns:
+        Dictionary with:
+        - success: Boolean
+        - poems: List of matching poems with their scores
+        - total_matches: Count of matching poems
+        - query: The search parameters used
+
+    Example:
+        ```
+        # Find completed poems scoring 8+ on detail and mystery
+        result = await find_high_scoring_poems(
+            qualities=["detail", "mystery"],
+            min_score=8,
+            states=["completed"],
+            limit=10
+        )
+
+        for poem in result['poems']:
+            print(f"{poem['title']}: {poem['avg_score']}/10")
+        ```
+    """
+    return find_high_scoring_poems_impl(qualities, min_score, states, limit)
+
+
+def main() -> None:
     """Main entry point for the MCP server."""
     logger.info("Starting Poetry MCP Server...")
 

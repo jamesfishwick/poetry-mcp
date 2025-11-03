@@ -30,7 +30,7 @@ class CatalogIndex:
     - by_tag: O(1) lookup of all poems with a tag
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize empty indices."""
         # Primary indices
         self.by_id: dict[str, Poem] = {}
@@ -72,6 +72,10 @@ class CatalogIndex:
         """Get poem by ID (O(1) lookup)."""
         return self.by_id.get(poem_id)
 
+    def get_poem(self, poem_id: str) -> Optional[Poem]:
+        """Alias for get_by_id for compatibility with enrichment tools."""
+        return self.get_by_id(poem_id)
+
     def get_by_title(self, title: str) -> Optional[Poem]:
         """Get poem by exact title (case-insensitive, O(1) lookup)."""
         return self.by_title.get(title.lower())
@@ -89,11 +93,7 @@ class CatalogIndex:
         poem_ids = self.by_tag.get(tag.lower(), set())
         return [self.by_id[pid] for pid in poem_ids if pid in self.by_id]
 
-    def get_by_tags(
-        self,
-        tags: list[str],
-        match_mode: str = "all"
-    ) -> list[Poem]:
+    def get_by_tags(self, tags: list[str], match_mode: str = "all") -> list[Poem]:
         """
         Get poems matching tag criteria.
 
@@ -118,11 +118,7 @@ class CatalogIndex:
 
         return [self.by_id[pid] for pid in matching_ids if pid in self.by_id]
 
-    def search_content(
-        self,
-        query: str,
-        case_sensitive: bool = False
-    ) -> list[Poem]:
+    def search_content(self, query: str, case_sensitive: bool = False) -> list[Poem]:
         """
         Search poem content for query string.
 
@@ -185,7 +181,7 @@ class CatalogIndex:
             "total_word_count": total_word_count,
             "avg_word_count": avg_word_count,
             "oldest_poem": oldest_poem,
-            "newest_poem": newest_poem
+            "newest_poem": newest_poem,
         }
 
     def clear(self) -> None:
@@ -205,23 +201,33 @@ class Catalog:
     Handles scanning filesystem, parsing poems, and maintaining indices.
     """
 
-    def __init__(self, vault_root: Path):
+    def __init__(
+        self,
+        vault_root: Path,
+        exclude_dirs: Optional[list[str]] = None,
+        custom_states: Optional[list[str]] = None,
+    ):
         """
         Initialize catalog with vault root.
 
         Args:
             vault_root: Absolute path to Poetry vault root
+            exclude_dirs: Optional list of catalog subdirectories to exclude from scanning
+            custom_states: Optional list of custom states to accept (beyond standard states)
         """
         self.vault_root = Path(vault_root)
         self.catalog_dir = self.vault_root / "catalog"
+        self.exclude_dirs = exclude_dirs or []
         self.index = CatalogIndex()
         self.last_sync: Optional[str] = None
 
-    def sync(
-        self,
-        force_rescan: bool = False,
-        update_missing_metadata: bool = True
-    ) -> SyncResult:
+        # Set custom states on Poem model for validation
+        if custom_states:
+            from ..models.poem import Poem
+
+            Poem.set_custom_states(custom_states)
+
+    def sync(self, force_rescan: bool = False, update_missing_metadata: bool = True) -> SyncResult:
         """
         Sync catalog from filesystem.
 
@@ -240,7 +246,6 @@ class Catalog:
             self.index.clear()
 
         # Track statistics
-        total_before = len(self.index.all_poems)
         new_poems = 0
         updated_poems = 0
         skipped_poems = 0
@@ -252,8 +257,26 @@ class Catalog:
         if not self.catalog_dir.exists():
             raise FileNotFoundError(f"Catalog directory not found: {self.catalog_dir}")
 
-        markdown_files = list(self.catalog_dir.rglob("*.md"))
-        logger.info(f"Found {len(markdown_files)} markdown files")
+        # Get all markdown files
+        all_markdown_files = list(self.catalog_dir.rglob("*.md"))
+
+        # Filter out excluded directories
+        markdown_files = []
+        for md_file in all_markdown_files:
+            # Get relative path from catalog_dir to check if it's in excluded dir
+            rel_path = md_file.relative_to(self.catalog_dir)
+            first_dir = rel_path.parts[0] if len(rel_path.parts) > 1 else None
+
+            # Skip if in excluded directory
+            if first_dir and first_dir in self.exclude_dirs:
+                logger.debug(f"Skipping {md_file.name} (in excluded dir: {first_dir})")
+                continue
+
+            markdown_files.append(md_file)
+
+        logger.info(
+            f"Found {len(markdown_files)} markdown files (excluded {len(all_markdown_files) - len(markdown_files)} from excluded directories)"
+        )
 
         # Parse each file
         for md_file in markdown_files:
@@ -289,6 +312,7 @@ class Catalog:
 
         # Update last sync timestamp
         from datetime import datetime
+
         self.last_sync = datetime.now().isoformat()
 
         logger.info(
@@ -303,7 +327,7 @@ class Catalog:
             updated_poems=updated_poems,
             skipped_poems=skipped_poems,
             warnings=warnings,
-            duration_seconds=duration
+            duration_seconds=duration,
         )
 
     def get_stats(self) -> CatalogStats:
@@ -319,5 +343,5 @@ class Catalog:
             avg_word_count=stats["avg_word_count"],
             newest_poem=stats["newest_poem"],
             oldest_poem=stats["oldest_poem"],
-            last_sync=self.last_sync
+            last_sync=self.last_sync,
         )
