@@ -513,7 +513,7 @@ pytest tests/ --cov=poetry_mcp --cov-report=term-missing
 - [x] Formatting passes (black) ✅
 - [x] Version number updated in pyproject.toml ✅ (v0.1.0)
 - [x] CHANGELOG.md created ✅
-- [ ] Git tag created (v0.1.0) - User action required
+- [x] Git tag created (v0.1.0) ✅
 
 ## Known Deferred Features (Future)
 
