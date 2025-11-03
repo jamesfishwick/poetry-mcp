@@ -526,12 +526,12 @@ print(f"Moved to: {result['new_path']}")
 - [x] **Phase 9:** Maintenance Tools - Tag sync, state moves, quality grading
 - [x] **Phase 10:** Quality Scoring - 4 quality management tools with validation
 - [x] **Phase 11:** Venue & Submission Tracking - Venue registry, submission history
-- [x] **Phase 12:** Test Coverage Enhancement - Error paths, edge cases (79% coverage achieved)
+- [x] **Phase 12:** Test Coverage Enhancement - Error paths, edge cases (85% coverage achieved)
 
 ### Current Status
 
 - **Test Coverage:** 85% (343 tests, 100% pass rate)
-- **Implemented Tools:** 8 core MCP tools across all categories
+- **Implemented Tools:** 17 MCP tools across all categories
 - **Production Ready:** Core functionality operational
 
 ### Future Enhancements (v2+)
