@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server for managing poetry catalogs, nexuses, and submissions.
 
-**Status:** Production Ready - 17 tools implemented, 343 tests passing (85% coverage), all core features operational
+**Status:** Production Ready - 25 tools implemented, 343 tests passing (68% coverage), all core features operational
 
 ## Overview
 
@@ -483,6 +483,8 @@ print(f"Moved to: {result['new_path']}")
 - **link_poem_to_nexus** - Add nexus tags to poem frontmatter
 - **sync_nexus_tags** - Sync [[Nexus]] wikilinks with frontmatter tags
 - **move_poem_to_state** - Move poems between state directories
+- **create_nexus** - Create new themes, motifs, or forms
+- **delete_nexus** - Remove themes, motifs, or forms
 
 ### Agent Analysis Tools
 
@@ -501,14 +503,22 @@ print(f"Moved to: {result['new_path']}")
 - **find_high_scoring_poems** - Query poems by quality dimension and minimum score
 - **list_quality_dimensions** - Get available quality dimensions and descriptions
 
-### Submission Tracking Tools
+### Submission & Venue Management
 
-*Track submission history to literary venues*
+*Track submissions to literary venues with auto-generated venue views*
 
-- **get_venue** - Retrieve venue details by name
-- **list_venues** - Browse all tracked venues with filters
-- **get_submission_history** - View submission history for a poem or venue
-- **plan_submission** - Create planned submission record
+**Submission Tools:**
+- **sync_submissions** - Scan submissions/ directory and build index
+- **list_submissions** - Query submissions by venue, status, or poem (with filters)
+- **get_submission_stats** - Get submission statistics and acceptance rate
+
+**Venue Tools:**
+- **sync_venues** - Scan venues/ directory and load metadata
+- **list_venues** - Browse venues with payment and simultaneous filters
+- **get_venue** - Get venue metadata with all submissions
+- **regenerate_venue_file** - Rebuild venue markdown from metadata + submissions
+
+**Architecture:** Submissions are source-of-truth (individual .md files), venue files are auto-generated aggregation views
 
 ## Development Roadmap
 

@@ -19,6 +19,7 @@ from .config import load_config
 from .catalog.catalog import Catalog
 from .catalog.submission_catalog import SubmissionCatalog
 from .catalog.venue_catalog import VenueCatalog
+from .catalog.nexus_manager import NexusManager
 from .models.poem import Poem
 from .models.submission import Submission, SubmissionSummary, SubmissionStatus
 from .models.venue import Venue
@@ -50,6 +51,7 @@ mcp = FastMCP("poetry-mcp")
 catalog: Optional[Catalog] = None
 submission_catalog: Optional[SubmissionCatalog] = None
 venue_catalog: Optional[VenueCatalog] = None
+nexus_manager: Optional[NexusManager] = None
 
 
 def get_catalog() -> Catalog:
@@ -99,6 +101,20 @@ def get_venue_catalog() -> VenueCatalog:
         logger.info(f"Venue catalog initialized: {venues_dir}")
 
     return venue_catalog
+
+
+def get_nexus_manager() -> NexusManager:
+    """Get or initialize nexus manager instance."""
+    global nexus_manager
+
+    if nexus_manager is None:
+        logger.info("Initializing nexus manager...")
+        config = load_config()
+        nexus_root = config.vault.path / config.vault.nexus_dir
+        nexus_manager = NexusManager(nexus_root=nexus_root)
+        logger.info(f"Nexus manager initialized: {nexus_root}")
+
+    return nexus_manager
 
 
 @mcp.tool()
@@ -1208,6 +1224,167 @@ async def regenerate_venue_file(venue_name: str) -> dict:
         "file_path": str(output_path),
         "submissions_count": len(submissions),
     }
+
+
+# ============================================================================
+# Nexus Management Tools
+# ============================================================================
+
+
+@mcp.tool()
+async def create_nexus(
+    name: str,
+    category: str,
+    canonical_tag: str,
+    description: str,
+    custom_template: Optional[str] = None,
+) -> dict:
+    """
+    Create a new nexus (theme, motif, or form).
+
+    Creates a new nexus markdown file in the appropriate directory
+    (nexus/themes/, nexus/motifs/, or nexus/forms/).
+
+    Args:
+        name: Nexus name (e.g., "Water-Liquid", "American Grotesque", "Sonnet")
+        category: Nexus category - must be "theme", "motif", or "form"
+        canonical_tag: Tag for poems (e.g., "water", "american-grotesque", "sonnet")
+        description: What this nexus represents and its characteristics
+        custom_template: Optional custom markdown template for the nexus file
+
+    Returns:
+        Dictionary with:
+        - success: Boolean
+        - nexus: Created nexus object
+        - file_path: Path to created file
+
+    Example:
+        ```
+        # Create a new theme
+        result = await create_nexus(
+            name="Urban Decay",
+            category="theme",
+            canonical_tag="urban-decay",
+            description="Images of deteriorating cities, abandoned buildings, and industrial ruins"
+        )
+        print(f"Created: {result['file_path']}")
+
+        # Create a new form
+        result = await create_nexus(
+            name="Sonnet",
+            category="form",
+            canonical_tag="sonnet",
+            description="14-line poem with specific rhyme scheme and meter"
+        )
+        ```
+
+    Note:
+        After creating a nexus, sync the catalog to make it available for poem tagging:
+        `await get_all_nexuses()` will include the new nexus.
+    """
+    # Validate category
+    if category not in ["theme", "motif", "form"]:
+        return {
+            "success": False,
+            "error": f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
+        }
+
+    try:
+        manager = get_nexus_manager()
+        nexus = manager.create_nexus(
+            name=name,
+            category=category,
+            canonical_tag=canonical_tag,
+            description=description,
+            custom_template=custom_template,
+        )
+
+        logger.info(f"Created nexus: {nexus.name} ({category})")
+
+        return {
+            "success": True,
+            "nexus": nexus.model_dump(),
+            "file_path": nexus.file_path,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to create nexus: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@mcp.tool()
+async def delete_nexus(
+    name: str,
+    category: str,
+    force: bool = False,
+) -> dict:
+    """
+    Delete a nexus (theme, motif, or form).
+
+    Removes the nexus markdown file from the vault. Poems that reference
+    this nexus will keep their tags, but the nexus definition will be lost.
+
+    Args:
+        name: Nexus name to delete
+        category: Nexus category - must be "theme", "motif", or "form"
+        force: If True, delete even if poems reference it (default False)
+
+    Returns:
+        Dictionary with:
+        - success: Boolean
+        - deleted: Path to deleted file
+        - nexus_name: Name of deleted nexus
+        - category: Category of deleted nexus
+
+    Example:
+        ```
+        # Delete a theme
+        result = await delete_nexus(
+            name="Urban Decay",
+            category="theme"
+        )
+        print(f"Deleted: {result['deleted']}")
+
+        # Force delete even if poems reference it
+        result = await delete_nexus(
+            name="Old Theme",
+            category="theme",
+            force=True
+        )
+        ```
+
+    Warning:
+        This operation cannot be undone. The nexus file will be permanently
+        deleted from the filesystem. Poems with this tag will keep the tag,
+        but the nexus definition will be lost.
+    """
+    # Validate category
+    if category not in ["theme", "motif", "form"]:
+        return {
+            "success": False,
+            "error": f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
+        }
+
+    try:
+        manager = get_nexus_manager()
+        result = manager.delete_nexus(
+            name=name,
+            category=category,
+            force=force,
+        )
+
+        logger.info(f"Deleted nexus: {name} ({category})")
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to delete nexus: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+        }
 
 
 def main() -> None:
