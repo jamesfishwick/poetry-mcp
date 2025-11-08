@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server for managing poetry catalogs, nexuses, and submissions.
 
-**Status:** Production Ready - 25 tools implemented, 343 tests passing (68% coverage), all core features operational
+**Status:** Production Ready - 29 tools implemented, 343 tests passing (65% coverage), all core features operational
 
 ## Overview
 
@@ -483,8 +483,13 @@ print(f"Moved to: {result['new_path']}")
 - **link_poem_to_nexus** - Add nexus tags to poem frontmatter
 - **sync_nexus_tags** - Sync [[Nexus]] wikilinks with frontmatter tags
 - **move_poem_to_state** - Move poems between state directories
+
+**Nexus Management:**
 - **create_nexus** - Create new themes, motifs, or forms
-- **delete_nexus** - Remove themes, motifs, or forms
+- **delete_nexus** - Remove themes, motifs, or forms (with optional cleanup)
+- **get_poems_by_nexus** - Find all poems tagged with a specific nexus (reverse lookup)
+- **refresh_nexus_poem_counts** - Populate poem_count for all nexuses
+- **find_orphaned_tags** - Detect tags without nexus definitions (data integrity)
 
 ### Agent Analysis Tools
 

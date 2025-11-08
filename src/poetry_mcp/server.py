@@ -1232,6 +1232,260 @@ async def regenerate_venue_file(venue_name: str) -> dict:
 
 
 @mcp.tool()
+async def get_poems_by_nexus(
+    nexus_name: str,
+    category: str = "theme",
+    limit: Optional[int] = 50,
+) -> dict:
+    """
+    Get all poems tagged with a specific nexus.
+
+    Reverse lookup: finds all poems that reference this nexus via their tags.
+    Returns the nexus metadata along with matching poems.
+
+    Args:
+        nexus_name: Name of the nexus (e.g., "Water-Liquid", "American Grotesque")
+        category: Nexus category - "theme", "motif", or "form" (default: "theme")
+        limit: Maximum number of poems to return (default: 50)
+
+    Returns:
+        Dictionary with:
+        - success: Boolean
+        - nexus: Nexus metadata (name, canonical_tag, description)
+        - poems: List of poems tagged with this nexus
+        - total_count: Total number of matching poems
+        - returned_count: Number of poems returned (limited by limit param)
+
+    Example:
+        ```
+        # Find all poems with water imagery
+        result = await get_poems_by_nexus("Water-Liquid", "theme")
+        print(f"Found {result['total_count']} water poems")
+        for poem in result['poems']:
+            print(f"  - {poem['title']}")
+
+        # Find all American Sentences
+        result = await get_poems_by_nexus("American Sentence", "form")
+        ```
+
+    Note:
+        This provides the reverse direction of link_poem_to_nexus().
+        Use this to explore what poems are connected to a nexus.
+    """
+    cat = get_catalog()
+
+    # Get nexus registry to find the canonical_tag
+    registry = await get_all_nexuses()
+
+    # Find the nexus in the appropriate category
+    nexus_list = {
+        "theme": registry.themes,
+        "motif": registry.motifs,
+        "form": registry.forms,
+    }.get(category)
+
+    if not nexus_list:
+        return {
+            "success": False,
+            "error": f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
+        }
+
+    # Find nexus by name (case-insensitive)
+    nexus = None
+    for n in nexus_list:
+        if n.name.lower() == nexus_name.lower():
+            nexus = n
+            break
+
+    if not nexus:
+        return {
+            "success": False,
+            "error": f"Nexus '{nexus_name}' not found in category '{category}'",
+            "available_nexuses": [n.name for n in nexus_list],
+        }
+
+    # Get poems with this canonical tag
+    poems = cat.index.get_by_tag(nexus.canonical_tag)
+
+    # Apply limit
+    total_count = len(poems)
+    if limit:
+        poems = poems[:limit]
+
+    logger.info(f"Found {total_count} poems for nexus '{nexus_name}' ({nexus.canonical_tag})")
+
+    return {
+        "success": True,
+        "nexus": nexus.model_dump(),
+        "poems": [poem.model_dump() for poem in poems],
+        "total_count": total_count,
+        "returned_count": len(poems),
+    }
+
+
+@mcp.tool()
+async def refresh_nexus_poem_counts() -> dict:
+    """
+    Compute and populate poem_count for all nexuses.
+
+    Scans all poems in the catalog and counts how many are tagged
+    with each nexus's canonical_tag. Updates the nexus registry
+    with these counts.
+
+    Returns:
+        Dictionary with:
+        - success: Boolean
+        - nexuses_updated: Number of nexuses processed
+        - stats: Breakdown by category (themes, motifs, forms)
+        - top_nexuses: Top 5 most-connected nexuses
+
+    Example:
+        ```
+        result = await refresh_nexus_poem_counts()
+        print(f"Updated {result['nexuses_updated']} nexuses")
+
+        for nexus in result['top_nexuses']:
+            print(f"  {nexus['name']}: {nexus['poem_count']} poems")
+        ```
+
+    Note:
+        This is useful for seeing which nexuses are most prevalent
+        in your poetry collection. Run periodically to keep counts fresh.
+    """
+    cat = get_catalog()
+    registry = await get_all_nexuses()
+
+    stats = {
+        "themes": {"count": 0, "total_poems": 0},
+        "motifs": {"count": 0, "total_poems": 0},
+        "forms": {"count": 0, "total_poems": 0},
+    }
+
+    all_nexuses_with_counts = []
+
+    # Update poem_count for each nexus
+    for category_name, nexus_list in [
+        ("themes", registry.themes),
+        ("motifs", registry.motifs),
+        ("forms", registry.forms),
+    ]:
+        for nexus in nexus_list:
+            # Count poems with this canonical tag
+            poems = cat.index.get_by_tag(nexus.canonical_tag)
+            nexus.poem_count = len(poems)
+
+            stats[category_name]["count"] += 1
+            stats[category_name]["total_poems"] += len(poems)
+
+            all_nexuses_with_counts.append({
+                "name": nexus.name,
+                "category": nexus.category,
+                "canonical_tag": nexus.canonical_tag,
+                "poem_count": nexus.poem_count,
+            })
+
+    # Sort to find top nexuses
+    all_nexuses_with_counts.sort(key=lambda n: n["poem_count"], reverse=True)
+    top_nexuses = all_nexuses_with_counts[:5]
+
+    total_updated = sum(s["count"] for s in stats.values())
+
+    logger.info(f"Refreshed poem counts for {total_updated} nexuses")
+
+    return {
+        "success": True,
+        "nexuses_updated": total_updated,
+        "stats": stats,
+        "top_nexuses": top_nexuses,
+    }
+
+
+@mcp.tool()
+async def find_orphaned_tags() -> dict:
+    """
+    Find tags in poems that don't match any nexus.
+
+    Scans all tags used in poems and compares them against the
+    canonical_tags defined in nexuses. Returns tags that exist
+    in poems but have no corresponding nexus definition.
+
+    Returns:
+        Dictionary with:
+        - success: Boolean
+        - orphaned_tags: List of tags without nexus definitions
+        - orphaned_count: Number of orphaned tags found
+        - affected_poems: List of poems with orphaned tags
+        - valid_tags: List of all valid nexus tags for reference
+
+    Example:
+        ```
+        result = await find_orphaned_tags()
+        print(f"Found {result['orphaned_count']} orphaned tags")
+
+        for tag in result['orphaned_tags']:
+            print(f"  - {tag} (no nexus definition)")
+
+        for poem in result['affected_poems']:
+            print(f"  {poem['title']}: {poem['orphaned_tags']}")
+        ```
+
+    Note:
+        Orphaned tags usually indicate:
+        - Typos in manual tagging
+        - Deleted nexuses that weren't cleaned up
+        - Legacy tags from old schema
+        Use this to maintain data integrity.
+    """
+    cat = get_catalog()
+    registry = await get_all_nexuses()
+
+    # Collect all valid canonical tags from nexuses
+    valid_tags = set()
+    for nexus_list in [registry.themes, registry.motifs, registry.forms]:
+        for nexus in nexus_list:
+            if nexus.canonical_tag:
+                valid_tags.add(nexus.canonical_tag.lower())
+
+    # Collect all tags used in poems
+    all_poem_tags = set()
+    poems_with_orphaned = []
+
+    for poem in cat.index.all_poems:
+        if poem.tags:
+            for tag in poem.tags:
+                tag_lower = tag.lower()
+                all_poem_tags.add(tag_lower)
+
+                # Check if this tag is orphaned
+                if tag_lower not in valid_tags:
+                    # Find if this poem is already in the list
+                    existing = next((p for p in poems_with_orphaned if p["id"] == poem.id), None)
+                    if existing:
+                        existing["orphaned_tags"].append(tag)
+                    else:
+                        poems_with_orphaned.append({
+                            "id": poem.id,
+                            "title": poem.title,
+                            "orphaned_tags": [tag],
+                            "file_path": str(poem.file_path),
+                        })
+
+    # Find orphaned tags
+    orphaned_tags = sorted(all_poem_tags - valid_tags)
+
+    logger.info(f"Found {len(orphaned_tags)} orphaned tags across {len(poems_with_orphaned)} poems")
+
+    return {
+        "success": True,
+        "orphaned_tags": orphaned_tags,
+        "orphaned_count": len(orphaned_tags),
+        "affected_poems": poems_with_orphaned,
+        "affected_poems_count": len(poems_with_orphaned),
+        "valid_tags": sorted(valid_tags),
+    }
+
+
+@mcp.tool()
 async def create_nexus(
     name: str,
     category: str,
@@ -1301,6 +1555,11 @@ async def create_nexus(
 
         logger.info(f"Created nexus: {nexus.name} ({category})")
 
+        # Refresh nexus registry to include new nexus
+        cat = get_catalog()
+        initialize_enrichment_tools(cat)
+        logger.info("Nexus registry refreshed")
+
         return {
             "success": True,
             "nexus": nexus.model_dump(),
@@ -1319,17 +1578,19 @@ async def create_nexus(
 async def delete_nexus(
     name: str,
     category: str,
+    cleanup_poems: bool = False,
     force: bool = False,
 ) -> dict:
     """
     Delete a nexus (theme, motif, or form).
 
-    Removes the nexus markdown file from the vault. Poems that reference
-    this nexus will keep their tags, but the nexus definition will be lost.
+    Removes the nexus markdown file from the vault. Optionally removes
+    the corresponding tag from all poems that reference it.
 
     Args:
         name: Nexus name to delete
         category: Nexus category - must be "theme", "motif", or "form"
+        cleanup_poems: If True, remove tag from all poems before deleting (default False)
         force: If True, delete even if poems reference it (default False)
 
     Returns:
@@ -1338,28 +1599,35 @@ async def delete_nexus(
         - deleted: Path to deleted file
         - nexus_name: Name of deleted nexus
         - category: Category of deleted nexus
+        - poems_cleaned: Number of poems that had tag removed (if cleanup_poems=True)
 
     Example:
         ```
-        # Delete a theme
+        # Delete a theme (poems keep the tag)
         result = await delete_nexus(
             name="Urban Decay",
             category="theme"
         )
         print(f"Deleted: {result['deleted']}")
 
-        # Force delete even if poems reference it
+        # Delete and clean up all references
         result = await delete_nexus(
             name="Old Theme",
             category="theme",
-            force=True
+            cleanup_poems=True
         )
+        print(f"Removed tag from {result['poems_cleaned']} poems")
         ```
 
     Warning:
         This operation cannot be undone. The nexus file will be permanently
-        deleted from the filesystem. Poems with this tag will keep the tag,
-        but the nexus definition will be lost.
+        deleted from the filesystem.
+
+        If cleanup_poems=False, poems with this tag will keep the tag,
+        creating orphaned references (use find_orphaned_tags to detect).
+
+        If cleanup_poems=True, the tag will be removed from all poems,
+        which may affect your tagging structure.
     """
     # Validate category
     if category not in ["theme", "motif", "form"]:
@@ -1369,6 +1637,51 @@ async def delete_nexus(
         }
 
     try:
+        cat = get_catalog()
+        registry = await get_all_nexuses()
+
+        # Find the nexus to get its canonical_tag
+        nexus_list = {
+            "theme": registry.themes,
+            "motif": registry.motifs,
+            "form": registry.forms,
+        }[category]
+
+        nexus = None
+        for n in nexus_list:
+            if n.name.lower() == name.lower():
+                nexus = n
+                break
+
+        if not nexus:
+            return {
+                "success": False,
+                "error": f"Nexus '{name}' not found in category '{category}'",
+            }
+
+        poems_cleaned = 0
+
+        # Clean up poems if requested
+        if cleanup_poems and nexus.canonical_tag:
+            poems_with_tag = cat.index.get_by_tag(nexus.canonical_tag)
+            logger.info(f"Cleaning up {len(poems_with_tag)} poems with tag '{nexus.canonical_tag}'")
+
+            for poem in poems_with_tag:
+                try:
+                    # Remove the tag from poem
+                    update_poem_tags(
+                        poem_path=poem.file_path,
+                        tags_to_remove=[nexus.canonical_tag],
+                    )
+                    poems_cleaned += 1
+                except Exception as e:
+                    logger.warning(f"Failed to remove tag from {poem.title}: {e}")
+
+            # Resync catalog after tag removals
+            cat.sync(force_rescan=True)
+            logger.info(f"Catalog resynced after cleaning {poems_cleaned} poems")
+
+        # Delete the nexus file
         manager = get_nexus_manager()
         result = manager.delete_nexus(
             name=name,
@@ -1377,6 +1690,14 @@ async def delete_nexus(
         )
 
         logger.info(f"Deleted nexus: {name} ({category})")
+
+        # Refresh nexus registry to remove deleted nexus
+        initialize_enrichment_tools(cat)
+        logger.info("Nexus registry refreshed")
+
+        # Add cleanup info to result
+        result["poems_cleaned"] = poems_cleaned
+
         return result
 
     except Exception as e:
