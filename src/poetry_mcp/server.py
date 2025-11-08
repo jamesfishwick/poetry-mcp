@@ -118,24 +118,64 @@ def get_nexus_manager() -> NexusManager:
 
 
 @mcp.tool()
-async def sync_catalog(force_rescan: bool = False) -> SyncResult:
+async def sync_catalog(
+    force_rescan: bool = False,
+    validate_tags: bool | None = None,
+) -> dict:
     """
     Synchronize catalog from filesystem.
 
     Scans all markdown files in catalog/ directory and builds in-memory indices.
     This should be called before using other catalog tools.
 
+    Optionally validates all poem tags against nexus definitions after syncing.
+
     Args:
         force_rescan: If True, rescan all files even if already loaded
+        validate_tags: If True, validate tags after sync. If None, uses config setting (default)
 
     Returns:
-        SyncResult with statistics about the sync operation
+        Dictionary with:
+        - sync_result: SyncResult with statistics about the sync operation
+        - validation_result: Tag validation results (if validate_tags=True)
+        - validation_passed: Boolean indicating if all tags are valid
     """
-    logger.info(f"Syncing catalog (force_rescan={force_rescan})...")
+    cfg = get_config()
+    
+    # Use config default if not explicitly specified
+    if validate_tags is None:
+        validate_tags = cfg.validation.auto_validate_on_sync
+    
+    logger.info(f"Syncing catalog (force_rescan={force_rescan}, validate_tags={validate_tags})...")
     cat = get_catalog()
-    result = cat.sync(force_rescan=force_rescan)
-    logger.info(f"Sync complete: {result.total_poems} poems")
-    return result
+    sync_result = cat.sync(force_rescan=force_rescan)
+    logger.info(f"Sync complete: {sync_result.total_poems} poems")
+
+    response = {
+        "sync_result": sync_result,
+        "validation_result": None,
+        "validation_passed": None,
+    }
+
+    # Auto-validate tags if requested
+    if validate_tags:
+        logger.info("Running automatic tag validation...")
+        validation_result = await validate_poem_tags()
+        response["validation_result"] = validation_result
+        response["validation_passed"] = validation_result["valid"]
+
+        if validation_result["valid"]:
+            logger.info("✅ Tag validation passed - all tags match nexus definitions")
+        else:
+            logger.warning(
+                f"⚠️  Tag validation failed: {validation_result['violations_count']} invalid tags "
+                f"across {validation_result['affected_poems_count']} poems"
+            )
+            logger.warning(f"Invalid tags: {', '.join(validation_result['invalid_tags'][:5])}")
+            if len(validation_result['invalid_tags']) > 5:
+                logger.warning(f"... and {len(validation_result['invalid_tags']) - 5} more")
+
+    return response
 
 
 @mcp.tool()

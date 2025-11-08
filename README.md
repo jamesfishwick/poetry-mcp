@@ -35,7 +35,10 @@ form: american-sentence          # ✅ Structural metadata → dedicated field
 - Quality → `quality: {detail: 8, mystery: 9}`
 - Notes → Use poem body or separate notes field
 
-**Validation:** Use `validate_poem_tags()` to check compliance
+**Validation:**
+- Manual: Use `validate_poem_tags()` to check compliance
+- Automatic: Tag validation runs automatically on `sync_catalog()` by default
+- Configure: Set `validation.auto_validate_on_sync: false` in config.yaml to disable
 
 ### Three Types of Metadata
 
@@ -306,6 +309,14 @@ performance:
 
   # Cache expiry (seconds)
   cache_expiry_seconds: 3600
+
+# Tag validation settings
+validation:
+  # Automatically validate tags when syncing catalog
+  auto_validate_on_sync: true
+
+  # Enforce strict tag policy (tags must match nexus canonical_tags)
+  strict_mode: true
 ```
 
 ### Quick Setup with Environment Variable
@@ -490,7 +501,7 @@ print(f"Moved to: {result['new_path']}")
 
 ### Catalog Management
 
-- **sync_catalog** - Scan vault and build in-memory catalog index
+- **sync_catalog** - Scan vault and build in-memory catalog index (with optional auto-validation)
 - **get_poem** - Retrieve poem by ID or title
 - **search_poems** - Search with filters (query, states, forms, tags)
 - **find_poems_by_tag** - Find poems by tag combinations
