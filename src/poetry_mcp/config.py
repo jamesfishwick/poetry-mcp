@@ -29,6 +29,8 @@ class VaultConfig(BaseModel):
 
     venues_dir: str = Field(default="venues", description="Venues subdirectory name")
 
+    submissions_dir: str = Field(default="submissions", description="Submissions subdirectory name")
+
     influences_dir: str = Field(default="influences", description="Influences subdirectory name")
 
     exclude_catalog_dirs: list[str] = Field(

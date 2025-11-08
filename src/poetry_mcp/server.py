@@ -17,9 +17,14 @@ from fastmcp import FastMCP
 
 from .config import load_config
 from .catalog.catalog import Catalog
+from .catalog.submission_catalog import SubmissionCatalog
+from .catalog.venue_catalog import VenueCatalog
 from .models.poem import Poem
+from .models.submission import Submission, SubmissionSummary, SubmissionStatus
+from .models.venue import Venue
 from .models.results import SyncResult, SearchResult, CatalogStats
 from .models.nexus import NexusRegistry
+from .writers.venue_writer import VenueWriter
 from .tools.enrichment_tools import (
     initialize_enrichment_tools,
     get_all_nexuses as _get_all_nexuses,
@@ -41,8 +46,10 @@ logger = logging.getLogger(__name__)
 # Initialize FastMCP server
 mcp = FastMCP("poetry-mcp")
 
-# Global catalog instance
+# Global catalog instances
 catalog: Optional[Catalog] = None
+submission_catalog: Optional[SubmissionCatalog] = None
+venue_catalog: Optional[VenueCatalog] = None
 
 
 def get_catalog() -> Catalog:
@@ -64,6 +71,34 @@ def get_catalog() -> Catalog:
             logger.info(f"Custom states enabled: {config.vault.custom_states}")
 
     return catalog
+
+
+def get_submission_catalog() -> SubmissionCatalog:
+    """Get or initialize submission catalog instance."""
+    global submission_catalog
+
+    if submission_catalog is None:
+        logger.info("Initializing submission catalog...")
+        config = load_config()
+        submissions_dir = config.vault.path / config.vault.submissions_dir
+        submission_catalog = SubmissionCatalog(submissions_dir=submissions_dir)
+        logger.info(f"Submission catalog initialized: {submissions_dir}")
+
+    return submission_catalog
+
+
+def get_venue_catalog() -> VenueCatalog:
+    """Get or initialize venue catalog instance."""
+    global venue_catalog
+
+    if venue_catalog is None:
+        logger.info("Initializing venue catalog...")
+        config = load_config()
+        venues_dir = config.vault.path / config.vault.venues_dir
+        venue_catalog = VenueCatalog(venues_dir=venues_dir)
+        logger.info(f"Venue catalog initialized: {venues_dir}")
+
+    return venue_catalog
 
 
 @mcp.tool()
@@ -870,6 +905,309 @@ async def find_high_scoring_poems(
         ```
     """
     return find_high_scoring_poems_impl(qualities, min_score, states, limit)
+
+
+# ============================================================================
+# Submission Management Tools
+# ============================================================================
+
+
+@mcp.tool()
+async def sync_submissions(force_rescan: bool = False) -> dict:
+    """
+    Synchronize submission catalog from filesystem.
+
+    Scans all submission markdown files in submissions/ directory
+    and builds in-memory indices for fast lookup.
+
+    Args:
+        force_rescan: If True, rescan all files even if already loaded
+
+    Returns:
+        Dictionary with sync statistics:
+        - total_submissions: Total submissions indexed
+        - new_submissions: Newly discovered submissions
+        - errors: List of parse errors encountered
+        - duration_seconds: Time taken
+
+    Example:
+        ```
+        result = await sync_submissions()
+        print(f"Loaded {result['total_submissions']} submissions")
+        ```
+    """
+    logger.info(f"Syncing submissions (force_rescan={force_rescan})...")
+    sub_cat = get_submission_catalog()
+    result = sub_cat.sync(force_rescan=force_rescan)
+    logger.info(f"Submission sync complete: {result['total_submissions']} submissions")
+    return result
+
+
+@mcp.tool()
+async def list_submissions(
+    venue: Optional[str] = None,
+    status: Optional[SubmissionStatus] = None,
+    poem: Optional[str] = None,
+    limit: Optional[int] = 50,
+) -> dict:
+    """
+    List submissions with optional filtering.
+
+    Args:
+        venue: Filter by venue name
+        status: Filter by status (planned, submitted, accepted, rejected, withdrawn)
+        poem: Filter by poem title
+        limit: Maximum results to return
+
+    Returns:
+        Dictionary with:
+        - submissions: List of matching Submission objects
+        - total: Total matches before limit
+        - filters_applied: Summary of filters used
+
+    Example:
+        ```
+        # Get all pending submissions
+        result = await list_submissions(status="submitted")
+
+        # Get submissions to a specific venue
+        result = await list_submissions(venue="Rattle")
+
+        # Find all submissions of a poem
+        result = await list_submissions(poem="Second Bridge Out Old Route 12")
+        ```
+    """
+    sub_cat = get_submission_catalog()
+
+    # Filter submissions
+    submissions = sub_cat.filter_submissions(venue=venue, status=status, poem=poem)
+
+    # Apply limit
+    total = len(submissions)
+    if limit:
+        submissions = submissions[:limit]
+
+    return {
+        "submissions": [sub.model_dump() for sub in submissions],
+        "total": total,
+        "filters_applied": {
+            "venue": venue,
+            "status": status,
+            "poem": poem,
+            "limit": limit,
+        },
+    }
+
+
+@mcp.tool()
+async def get_submission_stats() -> SubmissionSummary:
+    """
+    Get submission statistics and metrics.
+
+    Returns:
+        SubmissionSummary with:
+        - total_submissions: Total count
+        - by_status: Breakdown by status
+        - active_submissions: Currently pending
+        - total_poems_submitted: Count of individual poems
+        - acceptance_rate: Percentage accepted
+
+    Example:
+        ```
+        stats = await get_submission_stats()
+        print(f"Acceptance rate: {stats.acceptance_rate}%")
+        print(f"Active submissions: {stats.active_submissions}")
+        ```
+    """
+    sub_cat = get_submission_catalog()
+    return sub_cat.get_summary()
+
+
+# ============================================================================
+# Venue Management Tools
+# ============================================================================
+
+
+@mcp.tool()
+async def sync_venues(force_rescan: bool = False) -> dict:
+    """
+    Synchronize venue catalog from filesystem.
+
+    Scans all venue markdown files in venues/ directory
+    and extracts venue metadata from frontmatter.
+
+    Args:
+        force_rescan: If True, rescan all files even if already loaded
+
+    Returns:
+        Dictionary with sync statistics:
+        - total_venues: Total venues indexed
+        - new_venues: Newly discovered venues
+        - errors: List of parse errors encountered
+        - duration_seconds: Time taken
+
+    Example:
+        ```
+        result = await sync_venues()
+        print(f"Loaded {result['total_venues']} venues")
+        ```
+    """
+    logger.info(f"Syncing venues (force_rescan={force_rescan})...")
+    ven_cat = get_venue_catalog()
+    result = ven_cat.sync(force_rescan=force_rescan)
+    logger.info(f"Venue sync complete: {result['total_venues']} venues")
+    return result
+
+
+@mcp.tool()
+async def list_venues(
+    payment_filter: Optional[str] = None,
+    simultaneous_filter: Optional[bool] = None,
+) -> dict:
+    """
+    List all venues with optional filtering.
+
+    Args:
+        payment_filter: Filter by payment (e.g., "yes", "no", "$50")
+        simultaneous_filter: Filter by simultaneous submissions acceptance
+
+    Returns:
+        Dictionary with:
+        - venues: List of Venue objects
+        - total: Total count
+        - filters_applied: Summary of filters used
+
+    Example:
+        ```
+        # Get all paying venues
+        result = await list_venues(payment_filter="yes")
+
+        # Get venues accepting simultaneous submissions
+        result = await list_venues(simultaneous_filter=True)
+        ```
+    """
+    ven_cat = get_venue_catalog()
+
+    venues = ven_cat.filter_venues(
+        payment_filter=payment_filter,
+        simultaneous_filter=simultaneous_filter,
+    )
+
+    return {
+        "venues": [v.model_dump() for v in venues],
+        "total": len(venues),
+        "filters_applied": {
+            "payment": payment_filter,
+            "simultaneous": simultaneous_filter,
+        },
+    }
+
+
+@mcp.tool()
+async def get_venue(venue_name: str) -> dict:
+    """
+    Get venue metadata and submission history.
+
+    Args:
+        venue_name: Name of the venue
+
+    Returns:
+        Dictionary with:
+        - venue: Venue metadata
+        - submissions: All submissions to this venue
+        - stats: Venue-specific statistics
+
+    Example:
+        ```
+        result = await get_venue("Rattle")
+        print(f"Venue: {result['venue']['name']}")
+        print(f"Total submissions: {result['stats']['total']}")
+        ```
+    """
+    ven_cat = get_venue_catalog()
+    sub_cat = get_submission_catalog()
+
+    # Get venue metadata
+    venue = ven_cat.get_by_name(venue_name)
+    if not venue:
+        return {
+            "success": False,
+            "error": f"Venue not found: {venue_name}",
+        }
+
+    # Get submissions for this venue
+    submissions = sub_cat.get_by_venue(venue_name)
+
+    # Calculate stats
+    stats = {
+        "total": len(submissions),
+        "by_status": {},
+    }
+
+    for sub in submissions:
+        status = sub.status
+        stats["by_status"][status] = stats["by_status"].get(status, 0) + 1
+
+    return {
+        "success": True,
+        "venue": venue.model_dump(),
+        "submissions": [sub.model_dump() for sub in submissions],
+        "stats": stats,
+    }
+
+
+@mcp.tool()
+async def regenerate_venue_file(venue_name: str) -> dict:
+    """
+    Regenerate venue markdown file from metadata and submissions.
+
+    Rebuilds the venue file with current metadata and all submissions
+    organized by status. This is useful after updating submission data.
+
+    Args:
+        venue_name: Name of the venue to regenerate
+
+    Returns:
+        Dictionary with:
+        - success: Boolean
+        - file_path: Path to regenerated file
+        - submissions_count: Number of submissions included
+
+    Example:
+        ```
+        result = await regenerate_venue_file("Rattle")
+        print(f"Regenerated: {result['file_path']}")
+        ```
+    """
+    ven_cat = get_venue_catalog()
+    sub_cat = get_submission_catalog()
+    config = load_config()
+
+    # Get venue metadata
+    venue = ven_cat.get_by_name(venue_name)
+    if not venue:
+        return {
+            "success": False,
+            "error": f"Venue not found: {venue_name}",
+        }
+
+    # Get submissions
+    submissions = sub_cat.get_by_venue(venue_name)
+
+    # Generate file
+    venues_dir = config.vault.path / config.vault.venues_dir
+    output_path = venues_dir / f"{venue_name}.md"
+
+    writer = VenueWriter()
+    writer.generate_venue_file(venue, submissions, output_path)
+
+    logger.info(f"Regenerated venue file: {output_path}")
+
+    return {
+        "success": True,
+        "file_path": str(output_path),
+        "submissions_count": len(submissions),
+    }
 
 
 def main() -> None:

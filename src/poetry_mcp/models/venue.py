@@ -23,10 +23,10 @@ class Venue(BaseModel):
         examples=["Palette Poetry", "Rattle", "The Georgia Review"],
     )
 
-    payment: Optional[str] = Field(
+    payment: Optional[str | bool] = Field(
         None,
-        description="Payment information: specific amount, 'yes', 'no', or 'unknown'",
-        examples=["$50/poem", "$50 + 2 copies", "yes", "no", "unknown"],
+        description="Payment information: specific amount, 'yes', 'no', boolean, or 'unknown'",
+        examples=["$50/poem", "$50 + 2 copies", "yes", "no", True, False, "unknown"],
     )
 
     response_time_days: Optional[int | str] = Field(
