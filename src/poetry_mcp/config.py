@@ -102,7 +102,7 @@ class ValidationConfig(BaseModel):
     """Tag validation configuration."""
 
     auto_validate_on_sync: bool = Field(
-        default=True, description="Automatically validate tags when syncing catalog"
+        default=True, description="Automatically validate tags on server startup (after initial sync)"
     )
 
     strict_mode: bool = Field(
