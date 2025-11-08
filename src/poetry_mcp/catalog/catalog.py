@@ -76,6 +76,22 @@ class CatalogIndex:
         """Alias for get_by_id for compatibility with enrichment tools."""
         return self.get_by_id(poem_id)
 
+    def get_by_id_or_title(self, identifier: str) -> Optional[Poem]:
+        """Get poem by ID or title (fallback lookup).
+
+        Args:
+            identifier: Poem ID or exact title
+
+        Returns:
+            Poem if found by ID or title, None otherwise
+        """
+        # Try by ID first
+        poem = self.get_by_id(identifier)
+        # Fallback to title search
+        if not poem:
+            poem = self.get_by_title(identifier)
+        return poem
+
     def get_by_title(self, title: str) -> Optional[Poem]:
         """Get poem by exact title (case-insensitive, O(1) lookup)."""
         return self.by_title.get(title.lower())

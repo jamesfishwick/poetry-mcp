@@ -101,12 +101,8 @@ async def get_poem(identifier: str, include_content: bool = True) -> Optional[Po
     """
     cat = get_catalog()
 
-    # Try by ID first
-    poem = cat.index.get_by_id(identifier.lower())
-
-    # Try by title if not found
-    if not poem:
-        poem = cat.index.get_by_title(identifier)
+    # Get poem by ID or title
+    poem = cat.index.get_by_id_or_title(identifier.lower())
 
     if poem and not include_content:
         # Return copy without content
@@ -546,9 +542,7 @@ def commit_quality_scores_impl(
     cat = catalog if catalog else get_catalog()
 
     # Get poem
-    poem = cat.index.get_by_id(poem_id)
-    if not poem:
-        poem = cat.index.get_by_title(poem_id)
+    poem = cat.index.get_by_id_or_title(poem_id)
     if not poem:
         return {"success": False, "error": f"Poem not found: {poem_id}"}
 
@@ -600,18 +594,13 @@ def commit_quality_scores_impl(
 
     # Write back
     import yaml
+    from poetry_mcp.writers.frontmatter_writer import create_backup
 
     fm_yaml = yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True)
     new_content = f"---\n{fm_yaml}---\n{body}"
 
-    # Create backup
-    backup_path = Path(str(file_path) + ".bak")
-    file_path.write_text(content, encoding="utf-8")  # Backup as .bak
-    import shutil
-
-    shutil.copy2(file_path, backup_path)
-
-    # Write new content
+    # Create backup and write new content
+    backup_path = create_backup(file_path)
     file_path.write_text(new_content, encoding="utf-8")
 
     # Resync catalog
@@ -687,9 +676,7 @@ def get_quality_scores_impl(
     cat = catalog if catalog else get_catalog()
 
     # Get poem
-    poem = cat.index.get_by_id(poem_id)
-    if not poem:
-        poem = cat.index.get_by_title(poem_id)
+    poem = cat.index.get_by_id_or_title(poem_id)
     if not poem:
         return {"success": False, "error": f"Poem not found: {poem_id}"}
 
