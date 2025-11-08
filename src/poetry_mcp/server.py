@@ -1401,40 +1401,58 @@ async def refresh_nexus_poem_counts() -> dict:
 
 
 @mcp.tool()
-async def find_orphaned_tags() -> dict:
+async def validate_poem_tags() -> dict:
     """
-    Find tags in poems that don't match any nexus.
+    Validate that all poem tags match nexus canonical_tags.
 
-    Scans all tags used in poems and compares them against the
-    canonical_tags defined in nexuses. Returns tags that exist
-    in poems but have no corresponding nexus definition.
+    STRICT VALIDATION: Tags in poems MUST match canonical_tags defined
+    in nexuses. This tool identifies violations of the tag policy.
+
+    Tag Policy:
+    - Tags represent thematic connections (water, bones, childhood)
+    - All tags must match a nexus canonical_tag
+    - No free-text tags allowed (use dedicated fields instead)
+    - Workflow metadata goes in specific fields (status, draft, etc.)
 
     Returns:
         Dictionary with:
-        - success: Boolean
-        - orphaned_tags: List of tags without nexus definitions
-        - orphaned_count: Number of orphaned tags found
-        - affected_poems: List of poems with orphaned tags
-        - valid_tags: List of all valid nexus tags for reference
+        - success: Boolean (True if all tags valid, False if violations found)
+        - valid: Boolean (alias for success)
+        - invalid_tags: List of tags that don't match any nexus
+        - violations_count: Number of invalid tags found
+        - affected_poems: List of poems with invalid tags
+        - total_poems_checked: Total poems scanned
+        - total_tags_checked: Total tags validated
+        - valid_tags: List of all valid nexus canonical_tags
 
     Example:
         ```
-        result = await find_orphaned_tags()
-        print(f"Found {result['orphaned_count']} orphaned tags")
+        result = await validate_poem_tags()
 
-        for tag in result['orphaned_tags']:
-            print(f"  - {tag} (no nexus definition)")
+        if not result['valid']:
+            print(f"❌ Found {result['violations_count']} invalid tags")
+            for tag in result['invalid_tags']:
+                print(f"  - '{tag}' (no nexus definition)")
 
-        for poem in result['affected_poems']:
-            print(f"  {poem['title']}: {poem['orphaned_tags']}")
+            print(f"\nAffected poems ({len(result['affected_poems'])}):")
+            for poem in result['affected_poems']:
+                print(f"  {poem['title']}: {poem['invalid_tags']}")
+        else:
+            print("✅ All tags valid!")
         ```
 
     Note:
-        Orphaned tags usually indicate:
-        - Typos in manual tagging
-        - Deleted nexuses that weren't cleaned up
-        - Legacy tags from old schema
-        Use this to maintain data integrity.
+        Invalid tags indicate:
+        - Typos in manual tagging → Fix the tag
+        - Free-text metadata → Move to dedicated field
+        - Deleted nexus → Create nexus or remove tag
+        - Legacy tags → Clean up or migrate to nexuses
+
+        Use cleanup workflow:
+        1. Run validate_poem_tags() to find violations
+        2. Fix manually in Obsidian or use frontmatter_writer
+        3. Re-sync catalog
+        4. Validate again until clean
     """
     cat = get_catalog()
     registry = await get_all_nexuses()
@@ -1446,42 +1464,84 @@ async def find_orphaned_tags() -> dict:
             if nexus.canonical_tag:
                 valid_tags.add(nexus.canonical_tag.lower())
 
-    # Collect all tags used in poems
-    all_poem_tags = set()
-    poems_with_orphaned = []
+    # Validate all tags in poems
+    all_tags_checked = set()
+    poems_with_invalid = []
+    total_poems_checked = 0
 
     for poem in cat.index.all_poems:
+        total_poems_checked += 1
         if poem.tags:
+            invalid_tags_in_poem = []
             for tag in poem.tags:
                 tag_lower = tag.lower()
-                all_poem_tags.add(tag_lower)
+                all_tags_checked.add(tag_lower)
 
-                # Check if this tag is orphaned
+                # Check if tag is invalid (doesn't match any nexus)
                 if tag_lower not in valid_tags:
-                    # Find if this poem is already in the list
-                    existing = next((p for p in poems_with_orphaned if p["id"] == poem.id), None)
-                    if existing:
-                        existing["orphaned_tags"].append(tag)
-                    else:
-                        poems_with_orphaned.append({
-                            "id": poem.id,
-                            "title": poem.title,
-                            "orphaned_tags": [tag],
-                            "file_path": str(poem.file_path),
-                        })
+                    invalid_tags_in_poem.append(tag)
 
-    # Find orphaned tags
-    orphaned_tags = sorted(all_poem_tags - valid_tags)
+            # If poem has invalid tags, record it
+            if invalid_tags_in_poem:
+                poems_with_invalid.append({
+                    "id": poem.id,
+                    "title": poem.title,
+                    "invalid_tags": invalid_tags_in_poem,
+                    "file_path": str(poem.file_path),
+                })
 
-    logger.info(f"Found {len(orphaned_tags)} orphaned tags across {len(poems_with_orphaned)} poems")
+    # Find all unique invalid tags
+    invalid_tags = sorted(all_tags_checked - valid_tags)
+
+    # Determine if validation passed
+    is_valid = len(invalid_tags) == 0
+
+    if is_valid:
+        logger.info(f"✅ Tag validation passed: {total_poems_checked} poems, {len(all_tags_checked)} tags, all valid")
+    else:
+        logger.warning(f"❌ Tag validation failed: {len(invalid_tags)} invalid tags across {len(poems_with_invalid)} poems")
 
     return {
-        "success": True,
-        "orphaned_tags": orphaned_tags,
-        "orphaned_count": len(orphaned_tags),
-        "affected_poems": poems_with_orphaned,
-        "affected_poems_count": len(poems_with_orphaned),
+        "success": is_valid,
+        "valid": is_valid,
+        "invalid_tags": invalid_tags,
+        "violations_count": len(invalid_tags),
+        "affected_poems": poems_with_invalid,
+        "affected_poems_count": len(poems_with_invalid),
+        "total_poems_checked": total_poems_checked,
+        "total_tags_checked": len(all_tags_checked),
         "valid_tags": sorted(valid_tags),
+    }
+
+
+@mcp.tool()
+async def find_orphaned_tags() -> dict:
+    """
+    Find tags in poems that don't match any nexus.
+
+    DEPRECATED: Use validate_poem_tags() instead for clearer validation semantics.
+
+    This is an alias for validate_poem_tags() with legacy return format.
+    Tags in poems MUST match nexus canonical_tags per the strict tag policy.
+
+    Returns:
+        Dictionary with:
+        - success: Boolean (always True for backwards compatibility)
+        - orphaned_tags: List of invalid tags
+        - orphaned_count: Number of invalid tags
+        - affected_poems: List of poems with invalid tags
+        - valid_tags: List of all valid nexus canonical_tags
+    """
+    result = await validate_poem_tags()
+
+    # Convert to legacy format
+    return {
+        "success": True,  # Legacy always returned True
+        "orphaned_tags": result["invalid_tags"],
+        "orphaned_count": result["violations_count"],
+        "affected_poems": result["affected_poems"],
+        "affected_poems_count": result["affected_poems_count"],
+        "valid_tags": result["valid_tags"],
     }
 
 

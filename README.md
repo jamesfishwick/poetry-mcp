@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server for managing poetry catalogs, nexuses, and submissions.
 
-**Status:** Production Ready - 29 tools implemented, 343 tests passing (65% coverage), all core features operational
+**Status:** Production Ready - 30 tools implemented, 343 tests passing (65% coverage), all core features operational
 
 ## Overview
 
@@ -15,6 +15,27 @@ Poetry MCP is a specialized MCP server that treats poems as **artifacts** (not k
 - Influence lineage tracking
 
 **Architecture:** No database - all data lives in markdown frontmatter. On startup, the MCP server scans poem files and loads frontmatter into Pydantic models in memory.
+
+### Tag Policy (Strict)
+
+**Tags represent thematic connections ONLY** - they must match canonical_tags from nexuses:
+
+```yaml
+---
+title: My Poem
+tags: [water, bones, childhood]  # ✅ Must match nexus canonical_tags
+status: fledgeling               # ✅ Workflow metadata → dedicated field
+form: american-sentence          # ✅ Structural metadata → dedicated field
+---
+```
+
+**No free-text tags allowed.** Use dedicated fields for workflow metadata:
+- Workflow states → `status: fledgeling`
+- Submission tracking → `submitted: true` (use submission files)
+- Quality → `quality: {detail: 8, mystery: 9}`
+- Notes → Use poem body or separate notes field
+
+**Validation:** Use `validate_poem_tags()` to check compliance
 
 ### Three Types of Metadata
 
@@ -489,7 +510,8 @@ print(f"Moved to: {result['new_path']}")
 - **delete_nexus** - Remove themes, motifs, or forms (with optional cleanup)
 - **get_poems_by_nexus** - Find all poems tagged with a specific nexus (reverse lookup)
 - **refresh_nexus_poem_counts** - Populate poem_count for all nexuses
-- **find_orphaned_tags** - Detect tags without nexus definitions (data integrity)
+- **validate_poem_tags** - Strict validation that all tags match nexus canonical_tags
+- **find_orphaned_tags** - DEPRECATED: Use validate_poem_tags instead
 
 ### Agent Analysis Tools
 
