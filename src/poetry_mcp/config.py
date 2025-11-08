@@ -61,7 +61,7 @@ class SearchConfig(BaseModel):
     """Search behavior configuration."""
 
     default_limit: int = Field(
-        default=20, ge=1, le=100, description="Default result limit for search queries"
+        default=50, ge=1, le=100, description="Default result limit for search queries"
     )
 
     case_sensitive: bool = Field(default=False, description="Whether text search is case-sensitive")

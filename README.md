@@ -284,7 +284,7 @@ vault:
 
 search:
   # Default number of results (1-100)
-  default_limit: 20
+  default_limit: 50
 
   # Case-sensitive search
   case_sensitive: false
@@ -522,7 +522,6 @@ print(f"Moved to: {result['new_path']}")
 - **get_poems_by_nexus** - Find all poems tagged with a specific nexus (reverse lookup)
 - **refresh_nexus_poem_counts** - Populate poem_count for all nexuses
 - **validate_poem_tags** - Strict validation that all tags match nexus canonical_tags
-- **find_orphaned_tags** - DEPRECATED: Use validate_poem_tags instead
 
 ### Agent Analysis Tools
 
@@ -579,7 +578,7 @@ print(f"Moved to: {result['new_path']}")
 ### Current Status
 
 - **Test Coverage:** 85% (343 tests, 100% pass rate)
-- **Implemented Tools:** 17 MCP tools across all categories
+- **Implemented Tools:** 30 MCP tools across all categories
 - **Production Ready:** Core functionality operational
 
 ### Future Enhancements (v2+)

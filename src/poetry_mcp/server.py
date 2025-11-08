@@ -24,7 +24,22 @@ from .catalog.nexus_manager import NexusManager
 from .models.poem import Poem
 from .models.submission import Submission, SubmissionSummary, SubmissionStatus
 from .models.venue import Venue
-from .models.results import SyncResult, SearchResult, CatalogStats
+from .models.results import (
+    SyncResult,
+    SearchResult,
+    CatalogStats,
+    ValidationResult,
+    NexusOperationResult,
+    PoemsByNexusResult,
+    NexusCountsResult,
+    ServerInfo,
+    SyncSubmissionsResult,
+    SyncVenuesResult,
+    VenueDetailResult,
+    RegenerateVenueResult,
+    SubmissionListResult,
+    VenueListResult,
+)
 from .models.nexus import NexusRegistry
 from .writers.venue_writer import VenueWriter
 from .tools.enrichment_tools import (
@@ -243,7 +258,7 @@ async def search_poems(
 
 @mcp.tool()
 async def find_poems_by_tag(
-    tags: List[str], match_mode: str = "all", states: Optional[List[str]] = None, limit: int = 20
+    tags: List[str], match_mode: str = "all", states: Optional[List[str]] = None, limit: int = 50
 ) -> List[Poem]:
     """
     Find poems by tags.
@@ -252,7 +267,7 @@ async def find_poems_by_tag(
         tags: List of tags to match
         match_mode: "all" (poems must have all tags) or "any" (at least one tag)
         states: Optional filter by states
-        limit: Maximum number of results
+        limit: Maximum number of results (default: 50)
 
     Returns:
         List of matching poems
@@ -276,14 +291,14 @@ async def find_poems_by_tag(
 
 
 @mcp.tool()
-async def list_poems_by_state(state: str, sort_by: str = "title", limit: int = 100) -> List[Poem]:
+async def list_poems_by_state(state: str, sort_by: str = "title", limit: int = 50) -> List[Poem]:
     """
     List poems in a specific state.
 
     Args:
         state: State to filter by (completed, fledgeling, still_cooking, etc.)
         sort_by: Field to sort by (title, created_at, updated_at, word_count)
-        limit: Maximum number of results
+        limit: Maximum number of results (default: 50)
 
     Returns:
         List of poems in the specified state
@@ -324,22 +339,27 @@ async def get_catalog_stats() -> CatalogStats:
 
 
 @mcp.tool()
-async def get_server_info() -> dict:
+async def get_server_info() -> ServerInfo:
     """
     Get server information and status.
 
     Returns:
-        Dictionary with server metadata
+        ServerInfo with server metadata and catalog statistics
     """
     config = load_config()
+    cat = get_catalog()
+    stats = await get_catalog_stats()
 
-    return {
-        "name": "poetry-mcp",
-        "version": "0.1.0",
-        "vault_path": str(config.vault.path),
-        "catalog_loaded": catalog is not None,
-        "total_poems": len(catalog.index.all_poems) if catalog else 0,
-    }
+    return ServerInfo(
+        server_name="poetry-mcp",
+        version="0.1.0",
+        config={
+            "vault_path": str(config.vault.path),
+            "catalog_dir": config.vault.catalog_dir,
+            "nexus_dir": config.vault.nexus_dir,
+        },
+        catalog_stats=stats,
+    )
 
 
 # ===== Enrichment Tools =====
@@ -888,7 +908,7 @@ async def find_high_scoring_poems(
     qualities: List[str],
     min_score: int = 8,
     states: Optional[List[str]] = None,
-    limit: int = 20,
+    limit: int = 50,
 ) -> dict:
     """
     Find poems with high scores on specified quality dimensions.
@@ -898,7 +918,7 @@ async def find_high_scoring_poems(
                    Example: ["detail", "mystery"]
         min_score: Minimum score threshold (0-10), default 8
         states: Optional list of states to filter by (e.g., ["completed"])
-        limit: Maximum number of results (default 20)
+        limit: Maximum number of results (default: 50)
 
     Returns:
         Dictionary with:
@@ -930,7 +950,7 @@ async def find_high_scoring_poems(
 
 
 @mcp.tool()
-async def sync_submissions(force_rescan: bool = False) -> dict:
+async def sync_submissions(force_rescan: bool = False) -> SyncSubmissionsResult:
     """
     Synchronize submission catalog from filesystem.
 
@@ -941,7 +961,8 @@ async def sync_submissions(force_rescan: bool = False) -> dict:
         force_rescan: If True, rescan all files even if already loaded
 
     Returns:
-        Dictionary with sync statistics:
+        SyncSubmissionsResult with sync statistics:
+        - success: Always True for successful sync
         - total_submissions: Total submissions indexed
         - new_submissions: Newly discovered submissions
         - errors: List of parse errors encountered
@@ -950,14 +971,21 @@ async def sync_submissions(force_rescan: bool = False) -> dict:
     Example:
         ```
         result = await sync_submissions()
-        print(f"Loaded {result['total_submissions']} submissions")
+        print(f"Loaded {result.total_submissions} submissions")
         ```
     """
     logger.info(f"Syncing submissions (force_rescan={force_rescan})...")
     sub_cat = get_submission_catalog()
     result = sub_cat.sync(force_rescan=force_rescan)
     logger.info(f"Submission sync complete: {result['total_submissions']} submissions")
-    return result
+    
+    return SyncSubmissionsResult(
+        success=True,
+        total_submissions=result["total_submissions"],
+        new_submissions=result["new_submissions"],
+        errors=result["errors"],
+        duration_seconds=result["duration_seconds"],
+    )
 
 
 @mcp.tool()
@@ -966,7 +994,7 @@ async def list_submissions(
     status: Optional[SubmissionStatus] = None,
     poem: Optional[str] = None,
     limit: Optional[int] = 50,
-) -> dict:
+) -> SubmissionListResult:
     """
     List submissions with optional filtering.
 
@@ -977,9 +1005,10 @@ async def list_submissions(
         limit: Maximum results to return
 
     Returns:
-        Dictionary with:
+        SubmissionListResult with:
+        - success: Always True
         - submissions: List of matching Submission objects
-        - total: Total matches before limit
+        - total_count: Total matches before limit
         - filters_applied: Summary of filters used
 
     Example:
@@ -1004,16 +1033,17 @@ async def list_submissions(
     if limit:
         submissions = submissions[:limit]
 
-    return {
-        "submissions": [sub.model_dump() for sub in submissions],
-        "total": total,
-        "filters_applied": {
+    return SubmissionListResult(
+        success=True,
+        submissions=submissions,
+        total_count=total,
+        filters_applied={
             "venue": venue,
             "status": status,
             "poem": poem,
             "limit": limit,
         },
-    }
+    )
 
 
 @mcp.tool()
@@ -1046,7 +1076,7 @@ async def get_submission_stats() -> SubmissionSummary:
 
 
 @mcp.tool()
-async def sync_venues(force_rescan: bool = False) -> dict:
+async def sync_venues(force_rescan: bool = False) -> SyncVenuesResult:
     """
     Synchronize venue catalog from filesystem.
 
@@ -1057,7 +1087,8 @@ async def sync_venues(force_rescan: bool = False) -> dict:
         force_rescan: If True, rescan all files even if already loaded
 
     Returns:
-        Dictionary with sync statistics:
+        SyncVenuesResult with sync statistics:
+        - success: Always True for successful sync
         - total_venues: Total venues indexed
         - new_venues: Newly discovered venues
         - errors: List of parse errors encountered
@@ -1066,21 +1097,28 @@ async def sync_venues(force_rescan: bool = False) -> dict:
     Example:
         ```
         result = await sync_venues()
-        print(f"Loaded {result['total_venues']} venues")
+        print(f"Loaded {result.total_venues} venues")
         ```
     """
     logger.info(f"Syncing venues (force_rescan={force_rescan})...")
     ven_cat = get_venue_catalog()
     result = ven_cat.sync(force_rescan=force_rescan)
     logger.info(f"Venue sync complete: {result['total_venues']} venues")
-    return result
+    
+    return SyncVenuesResult(
+        success=True,
+        total_venues=result["total_venues"],
+        new_venues=result["new_venues"],
+        errors=result["errors"],
+        duration_seconds=result["duration_seconds"],
+    )
 
 
 @mcp.tool()
 async def list_venues(
     payment_filter: Optional[str] = None,
     simultaneous_filter: Optional[bool] = None,
-) -> dict:
+) -> VenueListResult:
     """
     List all venues with optional filtering.
 
@@ -1089,9 +1127,10 @@ async def list_venues(
         simultaneous_filter: Filter by simultaneous submissions acceptance
 
     Returns:
-        Dictionary with:
+        VenueListResult with:
+        - success: Always True
         - venues: List of Venue objects
-        - total: Total count
+        - total_count: Total count
         - filters_applied: Summary of filters used
 
     Example:
@@ -1110,18 +1149,19 @@ async def list_venues(
         simultaneous_filter=simultaneous_filter,
     )
 
-    return {
-        "venues": [v.model_dump() for v in venues],
-        "total": len(venues),
-        "filters_applied": {
+    return VenueListResult(
+        success=True,
+        venues=venues,
+        total_count=len(venues),
+        filters_applied={
             "payment": payment_filter,
             "simultaneous": simultaneous_filter,
         },
-    }
+    )
 
 
 @mcp.tool()
-async def get_venue(venue_name: str) -> dict:
+async def get_venue(venue_name: str) -> VenueDetailResult:
     """
     Get venue metadata and submission history.
 
@@ -1129,16 +1169,18 @@ async def get_venue(venue_name: str) -> dict:
         venue_name: Name of the venue
 
     Returns:
-        Dictionary with:
-        - venue: Venue metadata
+        VenueDetailResult with:
+        - success: Whether venue was found
+        - venue: Venue metadata (if found)
         - submissions: All submissions to this venue
-        - stats: Venue-specific statistics
+        - error: Error message if venue not found
 
     Example:
         ```
         result = await get_venue("Rattle")
-        print(f"Venue: {result['venue']['name']}")
-        print(f"Total submissions: {result['stats']['total']}")
+        if result.success:
+            print(f"Venue: {result.venue.name}")
+            print(f"Total submissions: {len(result.submissions)}")
         ```
     """
     ven_cat = get_venue_catalog()
@@ -1147,34 +1189,23 @@ async def get_venue(venue_name: str) -> dict:
     # Get venue metadata
     venue = ven_cat.get_by_name(venue_name)
     if not venue:
-        return {
-            "success": False,
-            "error": f"Venue not found: {venue_name}",
-        }
+        return VenueDetailResult(
+            success=False,
+            error=f"Venue not found: {venue_name}",
+        )
 
     # Get submissions for this venue
     submissions = sub_cat.get_by_venue(venue_name)
 
-    # Calculate stats
-    stats = {
-        "total": len(submissions),
-        "by_status": {},
-    }
-
-    for sub in submissions:
-        status = sub.status
-        stats["by_status"][status] = stats["by_status"].get(status, 0) + 1
-
-    return {
-        "success": True,
-        "venue": venue.model_dump(),
-        "submissions": [sub.model_dump() for sub in submissions],
-        "stats": stats,
-    }
+    return VenueDetailResult(
+        success=True,
+        venue=venue,
+        submissions=submissions,
+    )
 
 
 @mcp.tool()
-async def regenerate_venue_file(venue_name: str) -> dict:
+async def regenerate_venue_file(venue_name: str) -> RegenerateVenueResult:
     """
     Regenerate venue markdown file from metadata and submissions.
 
@@ -1185,15 +1216,18 @@ async def regenerate_venue_file(venue_name: str) -> dict:
         venue_name: Name of the venue to regenerate
 
     Returns:
-        Dictionary with:
-        - success: Boolean
+        RegenerateVenueResult with:
+        - success: Whether regeneration succeeded
+        - venue_name: Name of venue regenerated
         - file_path: Path to regenerated file
         - submissions_count: Number of submissions included
+        - error: Error message if venue not found
 
     Example:
         ```
         result = await regenerate_venue_file("Rattle")
-        print(f"Regenerated: {result['file_path']}")
+        if result.success:
+            print(f"Regenerated: {result.file_path}")
         ```
     """
     ven_cat = get_venue_catalog()
@@ -1203,10 +1237,13 @@ async def regenerate_venue_file(venue_name: str) -> dict:
     # Get venue metadata
     venue = ven_cat.get_by_name(venue_name)
     if not venue:
-        return {
-            "success": False,
-            "error": f"Venue not found: {venue_name}",
-        }
+        return RegenerateVenueResult(
+            success=False,
+            venue_name=venue_name,
+            file_path="",
+            submissions_count=0,
+            error=f"Venue not found: {venue_name}",
+        )
 
     # Get submissions
     submissions = sub_cat.get_by_venue(venue_name)
@@ -1220,11 +1257,12 @@ async def regenerate_venue_file(venue_name: str) -> dict:
 
     logger.info(f"Regenerated venue file: {output_path}")
 
-    return {
-        "success": True,
-        "file_path": str(output_path),
-        "submissions_count": len(submissions),
-    }
+    return RegenerateVenueResult(
+        success=True,
+        venue_name=venue_name,
+        file_path=str(output_path),
+        submissions_count=len(submissions),
+    )
 
 
 # ============================================================================
@@ -1237,7 +1275,7 @@ async def get_poems_by_nexus(
     nexus_name: str,
     category: str = "theme",
     limit: Optional[int] = 50,
-) -> dict:
+) -> PoemsByNexusResult:
     """
     Get all poems tagged with a specific nexus.
 
@@ -1250,20 +1288,15 @@ async def get_poems_by_nexus(
         limit: Maximum number of poems to return (default: 50)
 
     Returns:
-        Dictionary with:
-        - success: Boolean
-        - nexus: Nexus metadata (name, canonical_tag, description)
-        - poems: List of poems tagged with this nexus
-        - total_count: Total number of matching poems
-        - returned_count: Number of poems returned (limited by limit param)
+        PoemsByNexusResult with nexus and matching poems
 
     Example:
         ```
         # Find all poems with water imagery
         result = await get_poems_by_nexus("Water-Liquid", "theme")
-        print(f"Found {result['total_count']} water poems")
-        for poem in result['poems']:
-            print(f"  - {poem['title']}")
+        print(f"Found {result.total_count} water poems")
+        for poem in result.poems:
+            print(f"  - {poem.title}")
 
         # Find all American Sentences
         result = await get_poems_by_nexus("American Sentence", "form")
@@ -1286,10 +1319,11 @@ async def get_poems_by_nexus(
     }.get(category)
 
     if not nexus_list:
-        return {
-            "success": False,
-            "error": f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
-        }
+        return PoemsByNexusResult(
+            success=False,
+            total_count=0,
+            error=f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
+        )
 
     # Find nexus by name (case-insensitive)
     nexus = None
@@ -1299,11 +1333,11 @@ async def get_poems_by_nexus(
             break
 
     if not nexus:
-        return {
-            "success": False,
-            "error": f"Nexus '{nexus_name}' not found in category '{category}'",
-            "available_nexuses": [n.name for n in nexus_list],
-        }
+        return PoemsByNexusResult(
+            success=False,
+            total_count=0,
+            error=f"Nexus '{nexus_name}' not found in category '{category}'",
+        )
 
     # Get poems with this canonical tag
     poems = cat.index.get_by_tag(nexus.canonical_tag)
@@ -1315,17 +1349,16 @@ async def get_poems_by_nexus(
 
     logger.info(f"Found {total_count} poems for nexus '{nexus_name}' ({nexus.canonical_tag})")
 
-    return {
-        "success": True,
-        "nexus": nexus.model_dump(),
-        "poems": [poem.model_dump() for poem in poems],
-        "total_count": total_count,
-        "returned_count": len(poems),
-    }
+    return PoemsByNexusResult(
+        success=True,
+        nexus=nexus,
+        poems=poems,
+        total_count=total_count,
+    )
 
 
 @mcp.tool()
-async def refresh_nexus_poem_counts() -> dict:
+async def refresh_nexus_poem_counts() -> NexusCountsResult:
     """
     Compute and populate poem_count for all nexuses.
 
@@ -1334,18 +1367,14 @@ async def refresh_nexus_poem_counts() -> dict:
     with these counts.
 
     Returns:
-        Dictionary with:
-        - success: Boolean
-        - nexuses_updated: Number of nexuses processed
-        - stats: Breakdown by category (themes, motifs, forms)
-        - top_nexuses: Top 5 most-connected nexuses
+        NexusCountsResult with refresh statistics and top nexuses
 
     Example:
         ```
         result = await refresh_nexus_poem_counts()
-        print(f"Updated {result['nexuses_updated']} nexuses")
+        print(f"Updated {result.nexuses_updated} nexuses")
 
-        for nexus in result['top_nexuses']:
+        for nexus in result.top_nexuses:
             print(f"  {nexus['name']}: {nexus['poem_count']} poems")
         ```
 
@@ -1393,16 +1422,16 @@ async def refresh_nexus_poem_counts() -> dict:
 
     logger.info(f"Refreshed poem counts for {total_updated} nexuses")
 
-    return {
-        "success": True,
-        "nexuses_updated": total_updated,
-        "stats": stats,
-        "top_nexuses": top_nexuses,
-    }
+    return NexusCountsResult(
+        success=True,
+        nexuses_updated=total_updated,
+        stats=stats,
+        top_nexuses=top_nexuses,
+    )
 
 
 @mcp.tool()
-async def validate_poem_tags() -> dict:
+async def validate_poem_tags() -> ValidationResult:
     """
     Validate that all poem tags match nexus canonical_tags.
 
@@ -1416,27 +1445,19 @@ async def validate_poem_tags() -> dict:
     - Workflow metadata goes in specific fields (status, draft, etc.)
 
     Returns:
-        Dictionary with:
-        - success: Boolean (True if all tags valid, False if violations found)
-        - valid: Boolean (alias for success)
-        - invalid_tags: List of tags that don't match any nexus
-        - violations_count: Number of invalid tags found
-        - affected_poems: List of poems with invalid tags
-        - total_poems_checked: Total poems scanned
-        - total_tags_checked: Total tags validated
-        - valid_tags: List of all valid nexus canonical_tags
+        ValidationResult with validation status and detailed violations
 
     Example:
         ```
         result = await validate_poem_tags()
 
-        if not result['valid']:
-            print(f"❌ Found {result['violations_count']} invalid tags")
-            for tag in result['invalid_tags']:
+        if not result.valid:
+            print(f"❌ Found {result.violations_count} invalid tags")
+            for tag in result.invalid_tags:
                 print(f"  - '{tag}' (no nexus definition)")
 
-            print(f"\nAffected poems ({len(result['affected_poems'])}):")
-            for poem in result['affected_poems']:
+            print(f"\nAffected poems ({len(result.affected_poems)}):")
+            for poem in result.affected_poems:
                 print(f"  {poem['title']}: {poem['invalid_tags']}")
         else:
             print("✅ All tags valid!")
@@ -1502,48 +1523,16 @@ async def validate_poem_tags() -> dict:
     else:
         logger.warning(f"❌ Tag validation failed: {len(invalid_tags)} invalid tags across {len(poems_with_invalid)} poems")
 
-    return {
-        "success": is_valid,
-        "valid": is_valid,
-        "invalid_tags": invalid_tags,
-        "violations_count": len(invalid_tags),
-        "affected_poems": poems_with_invalid,
-        "affected_poems_count": len(poems_with_invalid),
-        "total_poems_checked": total_poems_checked,
-        "total_tags_checked": len(all_tags_checked),
-        "valid_tags": sorted(valid_tags),
-    }
-
-
-@mcp.tool()
-async def find_orphaned_tags() -> dict:
-    """
-    Find tags in poems that don't match any nexus.
-
-    DEPRECATED: Use validate_poem_tags() instead for clearer validation semantics.
-
-    This is an alias for validate_poem_tags() with legacy return format.
-    Tags in poems MUST match nexus canonical_tags per the strict tag policy.
-
-    Returns:
-        Dictionary with:
-        - success: Boolean (always True for backwards compatibility)
-        - orphaned_tags: List of invalid tags
-        - orphaned_count: Number of invalid tags
-        - affected_poems: List of poems with invalid tags
-        - valid_tags: List of all valid nexus canonical_tags
-    """
-    result = await validate_poem_tags()
-
-    # Convert to legacy format
-    return {
-        "success": True,  # Legacy always returned True
-        "orphaned_tags": result["invalid_tags"],
-        "orphaned_count": result["violations_count"],
-        "affected_poems": result["affected_poems"],
-        "affected_poems_count": result["affected_poems_count"],
-        "valid_tags": result["valid_tags"],
-    }
+    return ValidationResult(
+        success=is_valid,
+        valid=is_valid,
+        invalid_tags=invalid_tags,
+        violations_count=len(invalid_tags),
+        affected_poems=poems_with_invalid,
+        total_poems_checked=total_poems_checked,
+        total_tags_checked=len(all_tags_checked),
+        valid_tags=sorted(valid_tags),
+    )
 
 
 @mcp.tool()
@@ -1553,7 +1542,7 @@ async def create_nexus(
     canonical_tag: str,
     description: str,
     custom_template: Optional[str] = None,
-) -> dict:
+) -> NexusOperationResult:
     """
     Create a new nexus (theme, motif, or form).
 
@@ -1568,10 +1557,7 @@ async def create_nexus(
         custom_template: Optional custom markdown template for the nexus file
 
     Returns:
-        Dictionary with:
-        - success: Boolean
-        - nexus: Created nexus object
-        - file_path: Path to created file
+        NexusOperationResult with success status and created nexus
 
     Example:
         ```
@@ -1582,7 +1568,7 @@ async def create_nexus(
             canonical_tag="urban-decay",
             description="Images of deteriorating cities, abandoned buildings, and industrial ruins"
         )
-        print(f"Created: {result['file_path']}")
+        print(f"Created: {result.file_path}")
 
         # Create a new form
         result = await create_nexus(
@@ -1599,10 +1585,11 @@ async def create_nexus(
     """
     # Validate category
     if category not in ["theme", "motif", "form"]:
-        return {
-            "success": False,
-            "error": f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
-        }
+        return NexusOperationResult(
+            success=False,
+            operation="created",
+            error=f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
+        )
 
     try:
         manager = get_nexus_manager()
@@ -1621,18 +1608,20 @@ async def create_nexus(
         initialize_enrichment_tools(cat)
         logger.info("Nexus registry refreshed")
 
-        return {
-            "success": True,
-            "nexus": nexus.model_dump(),
-            "file_path": nexus.file_path,
-        }
+        return NexusOperationResult(
+            success=True,
+            nexus=nexus,
+            operation="created",
+            file_path=nexus.file_path,
+        )
 
     except Exception as e:
         logger.error(f"Failed to create nexus: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return NexusOperationResult(
+            success=False,
+            operation="created",
+            error=str(e),
+        )
 
 
 @mcp.tool()
@@ -1641,7 +1630,7 @@ async def delete_nexus(
     category: str,
     cleanup_poems: bool = False,
     force: bool = False,
-) -> dict:
+) -> NexusOperationResult:
     """
     Delete a nexus (theme, motif, or form).
 
@@ -1655,12 +1644,7 @@ async def delete_nexus(
         force: If True, delete even if poems reference it (default False)
 
     Returns:
-        Dictionary with:
-        - success: Boolean
-        - deleted: Path to deleted file
-        - nexus_name: Name of deleted nexus
-        - category: Category of deleted nexus
-        - poems_cleaned: Number of poems that had tag removed (if cleanup_poems=True)
+        NexusOperationResult with deletion status and cleanup details
 
     Example:
         ```
@@ -1669,7 +1653,7 @@ async def delete_nexus(
             name="Urban Decay",
             category="theme"
         )
-        print(f"Deleted: {result['deleted']}")
+        print(f"Deleted: {result.file_path}")
 
         # Delete and clean up all references
         result = await delete_nexus(
@@ -1677,7 +1661,7 @@ async def delete_nexus(
             category="theme",
             cleanup_poems=True
         )
-        print(f"Removed tag from {result['poems_cleaned']} poems")
+        print(f"Removed tag from {result.poems_cleaned} poems")
         ```
 
     Warning:
@@ -1685,17 +1669,18 @@ async def delete_nexus(
         deleted from the filesystem.
 
         If cleanup_poems=False, poems with this tag will keep the tag,
-        creating orphaned references (use find_orphaned_tags to detect).
+        creating orphaned references (use validate_poem_tags to detect).
 
         If cleanup_poems=True, the tag will be removed from all poems,
         which may affect your tagging structure.
     """
     # Validate category
     if category not in ["theme", "motif", "form"]:
-        return {
-            "success": False,
-            "error": f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
-        }
+        return NexusOperationResult(
+            success=False,
+            operation="deleted",
+            error=f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
+        )
 
     try:
         cat = get_catalog()
@@ -1715,10 +1700,11 @@ async def delete_nexus(
                 break
 
         if not nexus:
-            return {
-                "success": False,
-                "error": f"Nexus '{name}' not found in category '{category}'",
-            }
+            return NexusOperationResult(
+                success=False,
+                operation="deleted",
+                error=f"Nexus '{name}' not found in category '{category}'",
+            )
 
         poems_cleaned = 0
 
@@ -1744,7 +1730,7 @@ async def delete_nexus(
 
         # Delete the nexus file
         manager = get_nexus_manager()
-        result = manager.delete_nexus(
+        delete_result = manager.delete_nexus(
             name=name,
             category=category,
             force=force,
@@ -1756,17 +1742,20 @@ async def delete_nexus(
         initialize_enrichment_tools(cat)
         logger.info("Nexus registry refreshed")
 
-        # Add cleanup info to result
-        result["poems_cleaned"] = poems_cleaned
-
-        return result
+        return NexusOperationResult(
+            success=True,
+            operation="deleted",
+            file_path=delete_result["deleted"],
+            poems_cleaned=poems_cleaned,
+        )
 
     except Exception as e:
         logger.error(f"Failed to delete nexus: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return NexusOperationResult(
+            success=False,
+            operation="deleted",
+            error=str(e),
+        )
 
 
 def main() -> None:

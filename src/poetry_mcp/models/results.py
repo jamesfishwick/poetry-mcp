@@ -3,7 +3,7 @@
 These models structure the data returned by various MCP tools.
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 
 from .poem import Poem
@@ -11,6 +11,7 @@ from .nexus import Nexus
 from .quality import Quality
 from .venue import Venue
 from .influence import Influence
+from .submission import Submission
 
 
 class SyncResult(BaseModel):
@@ -179,3 +180,161 @@ class CatalogStats(BaseModel):
             }
         }
     )
+
+
+class ValidationResult(BaseModel):
+    """
+    Result from validate_poem_tags operation.
+
+    Reports tag validation results and violations.
+    """
+
+    success: bool = Field(..., description="Whether validation passed (no invalid tags)")
+    valid: bool = Field(..., description="Alias for success (backward compatibility)")
+    invalid_tags: List[str] = Field(default_factory=list, description="Tags that don't match any nexus")
+    violations_count: int = Field(..., description="Number of invalid tags found")
+    affected_poems: List[dict] = Field(
+        default_factory=list, description="Poems containing invalid tags"
+    )
+    total_poems_checked: int = Field(..., description="Total number of poems validated")
+    total_tags_checked: int = Field(..., description="Total unique tags encountered")
+    valid_tags: List[str] = Field(default_factory=list, description="All valid nexus canonical tags")
+
+
+class NexusOperationResult(BaseModel):
+    """
+    Result from nexus creation or deletion operations.
+
+    Reports success status and operation details.
+    """
+
+    success: bool = Field(..., description="Whether operation succeeded")
+    nexus: Optional[Nexus] = Field(None, description="Nexus object (for create operations)")
+    operation: str = Field(..., description="Operation performed (created/deleted/updated)")
+    file_path: Optional[str] = Field(None, description="Path to nexus file")
+    poems_cleaned: int = Field(default=0, description="Number of poems cleaned up (delete only)")
+    error: Optional[str] = Field(None, description="Error message if operation failed")
+
+
+class PoemsByNexusResult(BaseModel):
+    """
+    Result from get_poems_by_nexus operation.
+
+    Returns all poems tagged with a specific nexus.
+    """
+
+    success: bool = Field(..., description="Whether lookup succeeded")
+    nexus: Optional[Nexus] = Field(None, description="The nexus being queried")
+    poems: List[Poem] = Field(default_factory=list, description="Poems tagged with this nexus")
+    total_count: int = Field(..., description="Total number of poems with this tag")
+    error: Optional[str] = Field(None, description="Error message if lookup failed")
+
+
+class NexusCountsResult(BaseModel):
+    """
+    Result from refresh_nexus_poem_counts operation.
+
+    Reports updated poem counts across all nexuses.
+    """
+
+    success: bool = Field(..., description="Whether refresh succeeded")
+    nexuses_updated: int = Field(..., description="Number of nexuses updated")
+    stats: dict = Field(
+        ...,
+        description="Statistics by category (themes/motifs/forms with count and total_poems)",
+    )
+    top_nexuses: List[dict] = Field(..., description="Top 5 nexuses by poem count")
+
+
+class ServerInfo(BaseModel):
+    """
+    Server information and configuration.
+
+    Returned by get_server_info() tool.
+    """
+
+    server_name: str = Field(..., description="MCP server name")
+    version: str = Field(..., description="Server version")
+    config: dict = Field(..., description="Current configuration")
+    catalog_stats: CatalogStats = Field(..., description="Current catalog statistics")
+
+
+class SyncSubmissionsResult(BaseModel):
+    """
+    Result from sync_submissions operation.
+
+    Reports submission catalog sync statistics.
+    """
+
+    success: bool = Field(..., description="Whether sync succeeded")
+    total_submissions: int = Field(..., description="Total number of submissions indexed")
+    new_submissions: int = Field(..., description="Number of newly discovered submissions")
+    errors: list[str] = Field(default_factory=list, description="List of parse errors encountered")
+    duration_seconds: float = Field(..., description="Time taken for sync operation")
+
+
+class SyncVenuesResult(BaseModel):
+    """
+    Result from sync_venues operation.
+
+    Reports venue catalog sync statistics.
+    """
+
+    success: bool = Field(..., description="Whether sync succeeded")
+    total_venues: int = Field(..., description="Total number of venues indexed")
+    new_venues: int = Field(..., description="Number of newly discovered venues")
+    errors: list[str] = Field(default_factory=list, description="List of parse errors encountered")
+    duration_seconds: float = Field(..., description="Time taken for sync operation")
+
+
+class VenueDetailResult(BaseModel):
+    """
+    Result from get_venue operation.
+
+    Returns venue details with all submissions.
+    """
+
+    success: bool = Field(..., description="Whether venue lookup succeeded")
+    venue: Optional[Venue] = Field(None, description="Venue metadata")
+    submissions: List[Submission] = Field(default_factory=list, description="All venue submissions")
+    error: Optional[str] = Field(None, description="Error message if lookup failed")
+
+
+class RegenerateVenueResult(BaseModel):
+    """
+    Result from regenerate_venue_file operation.
+
+    Reports venue file regeneration details.
+    """
+
+    success: bool = Field(..., description="Whether regeneration succeeded")
+    venue_name: str = Field(..., description="Name of venue regenerated")
+    file_path: str = Field(..., description="Path to regenerated venue file")
+    submissions_count: int = Field(..., description="Number of submissions in venue")
+    error: Optional[str] = Field(None, description="Error message if regeneration failed")
+
+
+class SubmissionListResult(BaseModel):
+    """
+    Result from list_submissions operation.
+
+    Returns filtered list of submissions with metadata.
+    """
+
+    success: bool = Field(..., description="Whether query succeeded")
+    submissions: List[Submission] = Field(default_factory=list, description="Matching submissions")
+    total_count: int = Field(..., description="Total number of matching submissions")
+    filters_applied: dict = Field(..., description="Filters used in query")
+
+
+class VenueListResult(BaseModel):
+    """
+    Result from list_venues operation.
+
+    Returns filtered list of venues.
+    """
+
+    success: bool = Field(..., description="Whether query succeeded")
+    venues: List[Venue] = Field(default_factory=list, description="Matching venues")
+    total_count: int = Field(..., description="Total number of matching venues")
+    filters_applied: dict = Field(..., description="Filters used in query")
