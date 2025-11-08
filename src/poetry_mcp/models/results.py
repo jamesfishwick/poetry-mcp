@@ -4,7 +4,7 @@ These models structure the data returned by various MCP tools.
 """
 
 from typing import Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from .poem import Poem
 from .nexus import Nexus
@@ -35,10 +35,8 @@ class SyncResult(BaseModel):
 
     duration_seconds: float = Field(..., description="Time taken for sync operation")
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "total_poems": 381,
                 "new_poems": 5,
@@ -51,6 +49,7 @@ class SyncResult(BaseModel):
                 "duration_seconds": 2.34,
             }
         }
+    )
 
 
 class SearchResult(BaseModel):
@@ -68,10 +67,8 @@ class SearchResult(BaseModel):
 
     query_time_ms: float = Field(..., description="Time taken to execute query in milliseconds")
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "poems": [
                     {
@@ -86,6 +83,7 @@ class SearchResult(BaseModel):
                 "query_time_ms": 45.2,
             }
         }
+    )
 
 
 class BaseFileResult(BaseModel):
@@ -109,10 +107,8 @@ class BaseFileResult(BaseModel):
         default_factory=list, description="Warnings encountered during parsing"
     )
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "entries": [
                     {"name": "Water-Liquid Imagery", "category": "theme"},
@@ -123,6 +119,7 @@ class BaseFileResult(BaseModel):
                 "warnings": [],
             }
         }
+    )
 
 
 class CatalogStats(BaseModel):
@@ -154,10 +151,8 @@ class CatalogStats(BaseModel):
 
     last_sync: Optional[str] = Field(default=None, description="Timestamp of last catalog sync")
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "total_poems": 381,
                 "by_state": {
@@ -183,3 +178,4 @@ class CatalogStats(BaseModel):
                 "last_sync": "2025-10-30T21:45:00Z",
             }
         }
+    )

@@ -5,7 +5,7 @@ Data comes from nexus markdown files and nexus.base view definition.
 """
 
 from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class Nexus(BaseModel):
@@ -44,10 +44,8 @@ class Nexus(BaseModel):
         default=None, description="Number of poems connected to this nexus (computed)"
     )
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "name": "Water-Liquid Imagery",
@@ -75,6 +73,7 @@ class Nexus(BaseModel):
                 },
             ]
         }
+    )
 
 
 class NexusRegistry(BaseModel):
@@ -98,10 +97,8 @@ class NexusRegistry(BaseModel):
 
     total_count: int = Field(..., description="Total number of nexuses across all categories")
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "themes": [
                     {
@@ -130,3 +127,4 @@ class NexusRegistry(BaseModel):
                 "total_count": 3,
             }
         }
+    )

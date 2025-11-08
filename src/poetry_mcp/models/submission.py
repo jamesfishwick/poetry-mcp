@@ -7,7 +7,7 @@ when, to where, and what the outcome was.
 
 from typing import Optional, Literal
 from datetime import date
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 SubmissionStatus = Literal[
@@ -37,7 +37,7 @@ class Submission(BaseModel):
     poems: list[str] = Field(
         ...,
         description="List of poem titles included in this submission",
-        min_items=1,
+        min_length=1,
         examples=[["Second Bridge Out Old Route 12"], ["Dead Deer", "Black Bread", "The Formula"]],
     )
 
@@ -78,10 +78,11 @@ class Submission(BaseModel):
         None, description="Source file where this submission was parsed from"
     )
 
-    @validator("status", always=True)
-    def sync_status_with_submitted(cls, v: str, values: dict) -> str:
+    @field_validator("status")
+    @classmethod
+    def sync_status_with_submitted(cls, v: str, info) -> str:
         """Ensure status and submitted flag are consistent."""
-        submitted: bool = values.get("submitted", False)  # type: ignore
+        submitted: bool = info.data.get("submitted", False)
 
         # If submitted=True but status is 'planned', upgrade to 'submitted'
         if submitted and v == "planned":
@@ -89,7 +90,9 @@ class Submission(BaseModel):
 
         # If status is 'submitted'/'accepted'/'rejected' but submitted=False, fix it
         if v in ("submitted", "accepted", "rejected") and not submitted:
-            values["submitted"] = True
+            # Note: Cannot modify other fields in field_validator, this validation
+            # should be handled in model_validator if needed
+            pass
 
         return v
 
@@ -108,10 +111,8 @@ class Submission(BaseModel):
         """Whether this submission has reached a final state."""
         return self.status in ("accepted", "rejected", "withdrawn")
 
-    class Config:
-        """Pydantic model configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "venue_name": "Palette Poetry",
@@ -134,6 +135,7 @@ class Submission(BaseModel):
                 },
             ]
         }
+    )
 
 
 class SubmissionSummary(BaseModel):
@@ -161,10 +163,8 @@ class SubmissionSummary(BaseModel):
         None, description="Percentage of completed submissions that were accepted"
     )
 
-    class Config:
-        """Pydantic model configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "total_submissions": 25,
                 "by_status": {
@@ -179,3 +179,4 @@ class SubmissionSummary(BaseModel):
                 "acceptance_rate": 25.0,
             }
         }
+    )

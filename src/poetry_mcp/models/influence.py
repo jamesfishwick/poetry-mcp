@@ -5,7 +5,7 @@ inform the poetry. Data comes from influences markdown files with frontmatter.
 """
 
 from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class Influence(BaseModel):
@@ -46,10 +46,8 @@ class Influence(BaseModel):
         default=None, description="Path to influence markdown file relative to vault root"
     )
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "name": "William Bronk",
@@ -77,3 +75,4 @@ class Influence(BaseModel):
                 },
             ]
         }
+    )

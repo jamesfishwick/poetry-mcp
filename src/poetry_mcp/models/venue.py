@@ -6,7 +6,7 @@ This is relatively static information about the venue itself.
 """
 
 from typing import Optional
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import BaseModel, HttpUrl, Field, ConfigDict
 
 
 class Venue(BaseModel):
@@ -72,10 +72,8 @@ class Venue(BaseModel):
     # File location for roundtrip editing
     file_path: Optional[str] = Field(None, description="Path to the venue's markdown file")
 
-    class Config:
-        """Pydantic model configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Palette Poetry",
                 "payment": "$50/poem",
@@ -87,3 +85,4 @@ class Venue(BaseModel):
                 "file_path": "/Users/jamesfishwick/.local/share/obsidian/art/Poetry/venues/Palette Poetry.md",
             }
         }
+    )
