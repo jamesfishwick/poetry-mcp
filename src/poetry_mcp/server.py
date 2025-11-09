@@ -181,152 +181,6 @@ async def get_poem(identifier: str, include_content: bool = True) -> Optional[Po
 
 
 @mcp.tool()
-async def search_poems(
-    query: str,
-    states: Optional[List[str]] = None,
-    forms: Optional[List[str]] = None,
-    tags: Optional[List[str]] = None,
-    limit: Optional[int] = None,
-    include_content: bool = False,
-) -> SearchResult:
-    """
-    Search for poems matching criteria.
-
-    Args:
-        query: Text to search for in titles, content, and notes
-        states: Filter by states (e.g., ["completed", "fledgeling"])
-        forms: Filter by forms (e.g., ["free_verse", "prose_poem"])
-        tags: Filter by tags (poems must have all specified tags)
-        limit: Maximum number of results to return (default from config)
-        include_content: Whether to include full poem text in results
-
-    Returns:
-        SearchResult with matched poems and query metadata
-    """
-    import time
-
-    start_time = time.perf_counter()
-
-    cat = get_catalog()
-    config = load_config()
-
-    # Use config defaults
-    if limit is None:
-        limit = config.search.default_limit
-
-    # Start with text search if query provided
-    if query:
-        results = cat.index.search_content(query, case_sensitive=config.search.case_sensitive)
-    else:
-        # No query, start with all poems
-        results = cat.index.all_poems.copy()
-
-    # Apply state filter
-    if states:
-        results = [p for p in results if p.state in states]
-
-    # Apply form filter
-    if forms:
-        results = [p for p in results if p.form in forms]
-
-    # Apply tag filter (must have all tags)
-    if tags:
-        results = [
-            p for p in results if all(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
-        ]
-
-    # Sort by relevance (poems with more tag matches first)
-    if tags:
-
-        def relevance_score(poem: Poem) -> int:
-            return sum(1 for tag in tags if tag.lower() in [t.lower() for t in poem.tags])
-
-        results.sort(key=relevance_score, reverse=True)
-
-    # Limit results
-    total_matches = len(results)
-    results = results[:limit]
-
-    # Remove content if not requested
-    if not include_content:
-        results = [Poem(**{**p.model_dump(), "content": None}) for p in results]
-
-    query_time_ms = (time.perf_counter() - start_time) * 1000
-
-    return SearchResult(poems=results, total_matches=total_matches, query_time_ms=query_time_ms)
-
-
-@mcp.tool()
-async def find_poems_by_tag(
-    tags: List[str], match_mode: str = "all", states: Optional[List[str]] = None, limit: int = 50
-) -> List[Poem]:
-    """
-    Find poems by tags.
-
-    Args:
-        tags: List of tags to match
-        match_mode: "all" (poems must have all tags) or "any" (at least one tag)
-        states: Optional filter by states
-        limit: Maximum number of results (default: 50)
-
-    Returns:
-        List of matching poems
-    """
-    cat = get_catalog()
-
-    # Get poems matching tags
-    poems = cat.index.get_by_tags(tags, match_mode=match_mode)
-
-    # Apply state filter
-    if states:
-        poems = [p for p in poems if p.state in states]
-
-    # Limit results
-    poems = poems[:limit]
-
-    # Remove content for efficiency
-    poems = [Poem(**{**p.model_dump(), "content": None}) for p in poems]
-
-    return poems
-
-
-@mcp.tool()
-async def list_poems_by_state(state: str, sort_by: str = "title", limit: int = 50) -> List[Poem]:
-    """
-    List poems in a specific state.
-
-    Args:
-        state: State to filter by (completed, fledgeling, still_cooking, etc.)
-        sort_by: Field to sort by (title, created_at, updated_at, word_count)
-        limit: Maximum number of results (default: 50)
-
-    Returns:
-        List of poems in the specified state
-    """
-    cat = get_catalog()
-
-    poems = cat.index.get_by_state(state)
-
-    # Sort by requested field
-    if sort_by == "title":
-        poems.sort(key=lambda p: p.title.lower())
-    elif sort_by == "created_at":
-        poems.sort(key=lambda p: p.created_at, reverse=True)
-    elif sort_by == "updated_at":
-        poems.sort(key=lambda p: p.updated_at, reverse=True)
-    elif sort_by == "word_count":
-        poems.sort(key=lambda p: p.word_count, reverse=True)
-
-    # Limit results
-    poems = poems[:limit]
-
-    # Remove content
-    poems = [Poem(**{**p.model_dump(), "content": None}) for p in poems]
-
-    return poems
-
-
-@mcp.tool()
 async def get_catalog_stats() -> CatalogStats:
     """
     Get catalog statistics.
@@ -360,6 +214,156 @@ async def get_server_info() -> ServerInfo:
         },
         catalog_stats=stats,
     )
+
+
+@mcp.tool()
+async def query_poems(
+    # Text search
+    query: Optional[str] = None,
+    # Filters
+    states: Optional[List[str]] = None,
+    forms: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    tag_match_mode: str = "all",  # "all" or "any"
+    # Quality filters  
+    min_quality_score: Optional[int] = None,
+    quality_dimensions: Optional[List[str]] = None,
+    # Sorting
+    sort_by: str = "relevance",  # relevance, title, created_at, updated_at, word_count
+    # Output control
+    limit: Optional[int] = None,
+    include_content: bool = False,
+) -> SearchResult:
+    """
+    Unified search and query interface for poems.
+    
+    Replaces: search_poems, find_poems_by_tag, list_poems_by_state,
+              get_poems_by_nexus, find_high_scoring_poems
+    
+    Args:
+        query: Text to search in titles, content, notes (optional)
+        states: Filter by states (e.g., ["completed", "fledgeling"])
+        forms: Filter by forms (e.g., ["free_verse", "prose_poem"])
+        tags: Filter by tags  
+        tag_match_mode: "all" (must have all tags) or "any" (at least one tag)
+        min_quality_score: Minimum score threshold (0-10) for quality filtering
+        quality_dimensions: Quality dimensions to filter on (e.g., ["detail", "mystery"])
+        sort_by: Sort field - "relevance" (default), "title", "created_at", "updated_at", "word_count"
+        limit: Maximum results (default from config)
+        include_content: Include full poem text in results
+    
+    Returns:
+        SearchResult with matched poems and query metadata
+        
+    Examples:
+        ```
+        # Text search with state filter
+        await query_poems(query="water", states=["completed"])
+        
+        # Tag search with ANY mode
+        await query_poems(tags=["water", "memory"], tag_match_mode="any")
+        
+        # State list with sorting
+        await query_poems(states=["completed"], sort_by="updated_at")
+        
+        # Quality-based search
+        await query_poems(
+            quality_dimensions=["detail", "mystery"],
+            min_quality_score=8,
+            states=["completed"]
+        )
+        
+        # Single nexus lookup (reverse tag lookup)
+        await query_poems(tags=["Water-Liquid Imagery"])
+        ```
+    """
+    import time
+    
+    start_time = time.perf_counter()
+    cat = get_catalog()
+    config = load_config()
+    
+    # Use config default for limit
+    if limit is None:
+        limit = config.search.default_limit
+    
+    # Start with text search or all poems
+    if query:
+        results = cat.index.search_content(query, case_sensitive=config.search.case_sensitive)
+    else:
+        results = cat.index.all_poems.copy()
+    
+    # Apply state filter
+    if states:
+        results = [p for p in results if p.state in states]
+    
+    # Apply form filter
+    if forms:
+        results = [p for p in results if p.form in forms]
+    
+    # Apply tag filter with match mode
+    if tags:
+        if tag_match_mode == "all":
+            # Must have all tags
+            results = [
+                p for p in results 
+                if all(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
+            ]
+        elif tag_match_mode == "any":
+            # Must have at least one tag
+            results = [
+                p for p in results
+                if any(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
+            ]
+    
+    # Apply quality score filter
+    if min_quality_score is not None and quality_dimensions:
+        filtered_results = []
+        for poem in results:
+            if not poem.quality or not poem.quality.scores:
+                continue
+                
+            # Check if poem meets threshold on ALL specified dimensions
+            meets_threshold = True
+            for dim in quality_dimensions:
+                dim_lower = dim.lower().strip()
+                score = poem.quality.scores.get(dim_lower)
+                if score is None or score < min_quality_score:
+                    meets_threshold = False
+                    break
+            
+            if meets_threshold:
+                filtered_results.append(poem)
+        
+        results = filtered_results
+    
+    # Sort results
+    if sort_by == "title":
+        results.sort(key=lambda p: p.title.lower())
+    elif sort_by == "created_at":
+        results.sort(key=lambda p: p.created_at, reverse=True)
+    elif sort_by == "updated_at":
+        results.sort(key=lambda p: p.updated_at, reverse=True)
+    elif sort_by == "word_count":
+        results.sort(key=lambda p: p.word_count, reverse=True)
+    elif sort_by == "relevance" and tags:
+        # Sort by tag match relevance
+        def relevance_score(poem: Poem) -> int:
+            return sum(1 for tag in tags if tag.lower() in [t.lower() for t in poem.tags])
+        results.sort(key=relevance_score, reverse=True)
+    # else: keep original order for relevance without tags
+    
+    # Limit results
+    total_matches = len(results)
+    results = results[:limit]
+    
+    # Remove content if not requested
+    if not include_content:
+        results = [Poem(**{**p.model_dump(), "content": None}) for p in results]
+    
+    query_time_ms = (time.perf_counter() - start_time) * 1000
+    
+    return SearchResult(poems=results, total_matches=total_matches, query_time_ms=query_time_ms)
 
 
 # ===== Enrichment Tools =====
@@ -903,47 +907,6 @@ def find_high_scoring_poems_impl(
     }
 
 
-@mcp.tool()
-async def find_high_scoring_poems(
-    qualities: List[str],
-    min_score: int = 8,
-    states: Optional[List[str]] = None,
-    limit: int = 50,
-) -> dict:
-    """
-    Find poems with high scores on specified quality dimensions.
-
-    Args:
-        qualities: List of quality dimensions to filter on
-                   Example: ["detail", "mystery"]
-        min_score: Minimum score threshold (0-10), default 8
-        states: Optional list of states to filter by (e.g., ["completed"])
-        limit: Maximum number of results (default: 50)
-
-    Returns:
-        Dictionary with:
-        - success: Boolean
-        - poems: List of matching poems with their scores
-        - total_matches: Count of matching poems
-        - query: The search parameters used
-
-    Example:
-        ```
-        # Find completed poems scoring 8+ on detail and mystery
-        result = await find_high_scoring_poems(
-            qualities=["detail", "mystery"],
-            min_score=8,
-            states=["completed"],
-            limit=10
-        )
-
-        for poem in result['poems']:
-            print(f"{poem['title']}: {poem['avg_score']}/10")
-        ```
-    """
-    return find_high_scoring_poems_impl(qualities, min_score, states, limit)
-
-
 # ============================================================================
 # Submission Management Tools
 # ============================================================================
@@ -1268,94 +1231,6 @@ async def regenerate_venue_file(venue_name: str) -> RegenerateVenueResult:
 # ============================================================================
 # Nexus Management Tools
 # ============================================================================
-
-
-@mcp.tool()
-async def get_poems_by_nexus(
-    nexus_name: str,
-    category: str = "theme",
-    limit: Optional[int] = 50,
-) -> PoemsByNexusResult:
-    """
-    Get all poems tagged with a specific nexus.
-
-    Reverse lookup: finds all poems that reference this nexus via their tags.
-    Returns the nexus metadata along with matching poems.
-
-    Args:
-        nexus_name: Name of the nexus (e.g., "Water-Liquid", "American Grotesque")
-        category: Nexus category - "theme", "motif", or "form" (default: "theme")
-        limit: Maximum number of poems to return (default: 50)
-
-    Returns:
-        PoemsByNexusResult with nexus and matching poems
-
-    Example:
-        ```
-        # Find all poems with water imagery
-        result = await get_poems_by_nexus("Water-Liquid", "theme")
-        print(f"Found {result.total_count} water poems")
-        for poem in result.poems:
-            print(f"  - {poem.title}")
-
-        # Find all American Sentences
-        result = await get_poems_by_nexus("American Sentence", "form")
-        ```
-
-    Note:
-        This provides the reverse direction of link_poem_to_nexus().
-        Use this to explore what poems are connected to a nexus.
-    """
-    cat = get_catalog()
-
-    # Get nexus registry to find the canonical_tag
-    registry = await get_all_nexuses()
-
-    # Find the nexus in the appropriate category
-    nexus_list = {
-        "theme": registry.themes,
-        "motif": registry.motifs,
-        "form": registry.forms,
-    }.get(category)
-
-    if not nexus_list:
-        return PoemsByNexusResult(
-            success=False,
-            total_count=0,
-            error=f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
-        )
-
-    # Find nexus by name (case-insensitive)
-    nexus = None
-    for n in nexus_list:
-        if n.name.lower() == nexus_name.lower():
-            nexus = n
-            break
-
-    if not nexus:
-        return PoemsByNexusResult(
-            success=False,
-            total_count=0,
-            error=f"Nexus '{nexus_name}' not found in category '{category}'",
-        )
-
-    # Get poems with this canonical tag
-    poems = cat.index.get_by_tag(nexus.canonical_tag)
-
-    # Apply limit
-    total_count = len(poems)
-    if limit:
-        poems = poems[:limit]
-
-    logger.info(f"Found {total_count} poems for nexus '{nexus_name}' ({nexus.canonical_tag})")
-
-    return PoemsByNexusResult(
-        success=True,
-        nexus=nexus,
-        poems=poems,
-        total_count=total_count,
-    )
-
 
 @mcp.tool()
 async def refresh_nexus_poem_counts() -> NexusCountsResult:

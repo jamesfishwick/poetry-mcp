@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server for managing poetry catalogs, nexuses, and submissions.
 
-**Status:** Production Ready - 30 tools implemented, 343 tests passing (65% coverage), all core features operational
+**Status:** Production Ready - 26 tools implemented, 343 tests passing (65% coverage), all core features operational
 
 ## Overview
 
@@ -503,9 +503,7 @@ print(f"Moved to: {result['new_path']}")
 
 - **sync_catalog** - Scan vault and build in-memory catalog index
 - **get_poem** - Retrieve poem by ID or title
-- **search_poems** - Search with filters (query, states, forms, tags)
-- **find_poems_by_tag** - Find poems by tag combinations
-- **list_poems_by_state** - List poems in specific states
+- **query_poems** - Unified search with text query, filters (states, forms, tags), quality scoring, and flexible sorting
 - **get_catalog_stats** - Get catalog statistics and health metrics
 - **get_server_info** - Server status and configuration
 
@@ -519,7 +517,6 @@ print(f"Moved to: {result['new_path']}")
 **Nexus Management:**
 - **create_nexus** - Create new themes, motifs, or forms
 - **delete_nexus** - Remove themes, motifs, or forms (with optional cleanup)
-- **get_poems_by_nexus** - Find all poems tagged with a specific nexus (reverse lookup)
 - **refresh_nexus_poem_counts** - Populate poem_count for all nexuses
 - **validate_poem_tags** - Strict validation that all tags match nexus canonical_tags
 
@@ -537,8 +534,6 @@ print(f"Moved to: {result['new_path']}")
 
 - **commit_quality_scores** - Write quality scores to poem frontmatter with validation
 - **get_quality_scores** - Retrieve existing quality scores from a poem
-- **find_high_scoring_poems** - Query poems by quality dimension and minimum score
-- **list_quality_dimensions** - Get available quality dimensions and descriptions
 
 ### Submission & Venue Management
 
@@ -578,7 +573,7 @@ print(f"Moved to: {result['new_path']}")
 ### Current Status
 
 - **Test Coverage:** 85% (343 tests, 100% pass rate)
-- **Implemented Tools:** 30 MCP tools across all categories
+- **Implemented Tools:** 26 MCP tools across all categories
 - **Production Ready:** Core functionality operational
 
 ### Future Enhancements (v2+)
