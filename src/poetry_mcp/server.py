@@ -181,18 +181,6 @@ async def get_poem(identifier: str, include_content: bool = True) -> Optional[Po
 
 
 @mcp.tool()
-async def get_catalog_stats() -> CatalogStats:
-    """
-    Get catalog statistics.
-
-    Returns:
-        CatalogStats with counts, metrics, and health information
-    """
-    cat = get_catalog()
-    return cat.get_stats()
-
-
-@mcp.tool()
 async def get_server_info() -> ServerInfo:
     """
     Get server information and status.
@@ -202,7 +190,7 @@ async def get_server_info() -> ServerInfo:
     """
     config = load_config()
     cat = get_catalog()
-    stats = await get_catalog_stats()
+    stats = cat.get_stats()
 
     return ServerInfo(
         server_name="poetry-mcp",
