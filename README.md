@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server for managing poetry catalogs, nexuses, and submissions.
 
-**Status:** Production Ready - 26 tools implemented, 343 tests passing (65% coverage), all core features operational
+**Status:** Production Ready - 25 tools implemented, 343 tests passing (65% coverage), all core features operational
 
 ## Overview
 
@@ -573,7 +573,7 @@ print(f"Moved to: {result['new_path']}")
 ### Current Status
 
 - **Test Coverage:** 85% (343 tests, 100% pass rate)
-- **Implemented Tools:** 26 MCP tools across all categories
+- **Implemented Tools:** 25 MCP tools across all categories
 - **Production Ready:** Core functionality operational
 
 ### Future Enhancements (v2+)
