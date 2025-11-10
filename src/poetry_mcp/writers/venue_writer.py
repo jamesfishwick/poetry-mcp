@@ -38,11 +38,14 @@ class VenueWriter:
             submissions: List of submissions for this venue
             output_path: Where to write the file
         """
+        # Preserve existing notes if file exists
+        preserved_notes = self._extract_notes_section(output_path) if output_path.exists() else None
+
         # Generate frontmatter
         frontmatter = self._generate_frontmatter(venue)
 
         # Generate submission tables
-        tables = self._generate_submission_tables(submissions)
+        tables = self._generate_submission_tables(submissions, preserved_notes)
 
         # Combine into full file
         content = f"{frontmatter}\n{tables}"
@@ -90,7 +93,7 @@ class VenueWriter:
 
         return f"---\n{yaml_str}---"
 
-    def _generate_submission_tables(self, submissions: list[Submission]) -> str:
+    def _generate_submission_tables(self, submissions: list[Submission], preserved_notes: Optional[str] = None) -> str:
         """Generate submission tables grouped by status."""
         # Group submissions by status
         by_status = {
@@ -135,9 +138,12 @@ class VenueWriter:
             sections.append("### 🚫 Withdrawn\n")
             sections.append(self._format_submission_table(by_status["withdrawn"], "withdrawn"))
 
-        # Notes section
+        # Notes section - preserve existing or use default
         sections.append("## Notes\n")
-        sections.append("_Add venue-specific observations, research, or strategy notes here_\n")
+        if preserved_notes:
+            sections.append(preserved_notes)
+        else:
+            sections.append("_Add venue-specific observations, research, or strategy notes here_\n")
 
         return "\n".join(sections)
 
@@ -169,8 +175,8 @@ class VenueWriter:
 
     def _format_submission_row(self, sub: Submission, status: str) -> str:
         """Format a single submission as a table row."""
-        # Poems column
-        poems_text = ", ".join(sub.poems)
+        # Poems column - wrap in [[wikilinks]] for Obsidian graph
+        poems_text = ", ".join(f"[[{poem}]]" for poem in sub.poems)
 
         # Date columns (vary by status)
         if status == "planned":
@@ -202,3 +208,40 @@ class VenueWriter:
         if isinstance(date_val, date):
             return date_val.strftime("%Y-%m-%d")
         return str(date_val)
+
+    def _extract_notes_section(self, file_path: Path) -> Optional[str]:
+        """
+        Extract existing ## Notes section content from venue file.
+        
+        Args:
+            file_path: Path to existing venue file
+            
+        Returns:
+            Notes section content (everything after ## Notes heading) or None
+        """
+        import re
+        
+        if not file_path.exists():
+            return None
+            
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            
+            # Find ## Notes section
+            notes_match = re.search(r'^##\s+Notes\s*$', content, re.MULTILINE)
+            if not notes_match:
+                return None
+            
+            # Extract content from ## Notes to end of file (no next ## heading for Notes)
+            start_pos = notes_match.end()
+            notes_content = content[start_pos:].strip()
+            
+            # Return preserved content (or None if it's just the default message)
+            if notes_content and notes_content != "_Add venue-specific observations, research, or strategy notes here_":
+                return notes_content + "\n"
+            
+            return None
+            
+        except Exception:
+            # If we can't read the file, just return None
+            return None

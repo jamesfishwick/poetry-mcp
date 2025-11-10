@@ -42,7 +42,7 @@ class SubmissionParser:
         content = file_path.read_text(encoding="utf-8")
 
         # Extract frontmatter
-        match = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
+        match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)", content, re.DOTALL)
         if not match:
             raise ParseError(f"No frontmatter found in {file_path}")
 
@@ -54,8 +54,11 @@ class SubmissionParser:
         if not isinstance(frontmatter, dict):
             raise ParseError(f"Frontmatter must be a dict in {file_path}")
 
+        # Extract body content
+        body = match.group(2)
+
         # Parse submission data
-        submission_data = self._normalize_submission_data(frontmatter, file_path)
+        submission_data = self._normalize_submission_data(frontmatter, body, file_path)
 
         # Add source file tracking
         submission_data["source_file"] = str(file_path)
@@ -65,8 +68,8 @@ class SubmissionParser:
         except ValidationError as e:
             raise ParseError(f"Invalid submission data in {file_path}: {e}")
 
-    def _normalize_submission_data(self, frontmatter: dict, file_path: Path) -> dict:
-        """Normalize frontmatter into Submission model format."""
+    def _normalize_submission_data(self, frontmatter: dict, body: str, file_path: Path) -> dict:
+        """Normalize frontmatter and body into Submission model format."""
         data = {}
 
         # Venue name (required)
@@ -74,21 +77,11 @@ class SubmissionParser:
         if not data["venue_name"]:
             raise ParseError(f"Missing venue_name in {file_path}")
 
-        # Poems - handle single poem_id or multiple poems
-        if "poem_id" in frontmatter:
-            # Single poem format
-            data["poems"] = [frontmatter["poem_id"]]
-        elif "poems" in frontmatter:
-            # Multiple poems format
-            poems = frontmatter["poems"]
-            if isinstance(poems, str):
-                data["poems"] = [poems]
-            elif isinstance(poems, list):
-                data["poems"] = poems
-            else:
-                raise ParseError(f"Invalid poems format in {file_path}")
-        else:
-            raise ParseError(f"Missing poem_id or poems in {file_path}")
+        # Poems - extract from ## Poems section wikilinks
+        poems = self._extract_poems_from_body(body, file_path)
+        if not poems:
+            raise ParseError(f"No poems found in ## Poems section in {file_path}")
+        data["poems"] = poems
 
         # Status - normalize aliases
         status = frontmatter.get("status", "planned")
@@ -157,6 +150,42 @@ class SubmissionParser:
             return value
 
         raise ParseError(f"Invalid date format in {file_path}: {value}")
+
+    def _extract_poems_from_body(self, body: str, file_path: Path) -> list[str]:
+        """
+        Extract poem titles from [[wikilinks]] in ## Poems section.
+        
+        Args:
+            body: Markdown body content after frontmatter
+            file_path: Path to file (for error reporting)
+            
+        Returns:
+            List of poem titles extracted from wikilinks
+            
+        Raises:
+            ParseError: If ## Poems section not found or no wikilinks present
+        """
+        # Find ## Poems section
+        poems_match = re.search(r'^##\s+Poems\s*$', body, re.MULTILINE)
+        if not poems_match:
+            raise ParseError(f"No ## Poems section found in {file_path}")
+        
+        # Extract content from ## Poems to next ## heading or end of file
+        start_pos = poems_match.end()
+        next_section = re.search(r'^##\s+', body[start_pos:], re.MULTILINE)
+        
+        if next_section:
+            poems_content = body[start_pos:start_pos + next_section.start()]
+        else:
+            poems_content = body[start_pos:]
+        
+        # Extract all [[wikilinks]] from poems section
+        wikilinks = re.findall(r'\[\[([^\]]+)\]\]', poems_content)
+        
+        if not wikilinks:
+            raise ParseError(f"No [[wikilinks]] found in ## Poems section in {file_path}")
+        
+        return wikilinks
 
     def generate_filename(
         self,

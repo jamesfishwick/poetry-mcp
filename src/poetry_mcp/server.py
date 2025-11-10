@@ -917,8 +917,8 @@ async def sync_submissions(force_rescan: bool = False) -> SyncSubmissionsResult:
     """
     Synchronize submission catalog from filesystem.
 
-    Scans all submission markdown files in submissions/ directory
-    and builds in-memory indices for fast lookup.
+    Scans all submission markdown files in submissions/ directory,
+    builds in-memory indices, and auto-regenerates venue files.
 
     Args:
         force_rescan: If True, rescan all files even if already loaded
@@ -941,7 +941,32 @@ async def sync_submissions(force_rescan: bool = False) -> SyncSubmissionsResult:
     sub_cat = get_submission_catalog()
     result = sub_cat.sync(force_rescan=force_rescan)
     logger.info(f"Submission sync complete: {result['total_submissions']} submissions")
-    
+
+    # Auto-regenerate venue files for all venues with submissions
+    logger.info("Auto-regenerating venue files...")
+    ven_cat = get_venue_catalog()
+    config = load_config()
+    venues_dir = config.vault.path / config.vault.venues_dir
+
+    # Get all unique venue names from submissions
+    all_submissions = sub_cat.all_submissions
+    venue_names = set(sub.venue_name for sub in all_submissions)
+
+    # Regenerate each venue file
+    regenerated_count = 0
+    for venue_name in venue_names:
+        venue = ven_cat.get_by_name(venue_name)
+        if venue:
+            submissions = sub_cat.get_by_venue(venue_name)
+            output_path = venues_dir / f"{venue_name}.md"
+
+            writer = VenueWriter()
+            writer.generate_venue_file(venue, submissions, output_path)
+            regenerated_count += 1
+            logger.debug(f"Regenerated venue file: {venue_name}")
+
+    logger.info(f"Regenerated {regenerated_count} venue files")
+
     return SyncSubmissionsResult(
         success=True,
         total_submissions=result["total_submissions"],
