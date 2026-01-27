@@ -421,3 +421,202 @@ class TestDeleteChain:
 
         assert result["success"] is False
         assert "not found" in result["error"]
+
+
+class TestAddPoemsToChain:
+    """Test add_poems_to_chain tool."""
+
+    @pytest.mark.asyncio
+    async def test_add_poems_to_existing_chain(self, mock_catalog, sample_poem):
+        """Test adding poems to an existing chain."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(
+            sample_poem("poem-1", chains=["water"], chain_positions={"water": 1})
+        )
+        mock_catalog.index.add_poem(sample_poem("poem-2"))  # Not in chain
+
+        initialize_chain_tools(mock_catalog)
+
+        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
+            mock_update.return_value = Mock(success=True, backup_path=None)
+
+            result = await add_poems_to_chain(
+                chain_id="water",
+                poem_ids=["poem-2"],
+            )
+
+            assert result["success"] is True
+            assert "poem-2" in result["poems_affected"]
+
+    @pytest.mark.asyncio
+    async def test_add_poems_with_positions(self, mock_catalog, sample_poem):
+        """Test adding poems with explicit positions."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(sample_poem("poem-1"))
+        mock_catalog.index.add_poem(sample_poem("poem-2"))
+
+        initialize_chain_tools(mock_catalog)
+
+        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
+            mock_update.return_value = Mock(success=True, backup_path=None)
+
+            result = await add_poems_to_chain(
+                chain_id="test-chain",
+                poem_ids=["poem-1", "poem-2"],
+                positions=[3, 4],
+            )
+
+            assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_add_poem_not_found(self, mock_catalog):
+        """Test adding non-existent poem to chain."""
+        initialize_chain_tools(mock_catalog)
+
+        result = await add_poems_to_chain(
+            chain_id="test-chain",
+            poem_ids=["nonexistent"],
+        )
+
+        assert result["success"] is False
+        assert "not found" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_add_poem_already_in_chain(self, mock_catalog, sample_poem):
+        """Test adding poem that's already in the chain."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(sample_poem("poem-1", chains=["water"]))
+
+        initialize_chain_tools(mock_catalog)
+
+        result = await add_poems_to_chain(
+            chain_id="water",
+            poem_ids=["poem-1"],
+        )
+
+        assert result["success"] is False
+        assert "already in chain" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_add_with_mismatched_positions_length(self, mock_catalog, sample_poem):
+        """Test adding poems with wrong number of positions."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(sample_poem("poem-1"))
+        mock_catalog.index.add_poem(sample_poem("poem-2"))
+
+        initialize_chain_tools(mock_catalog)
+
+        result = await add_poems_to_chain(
+            chain_id="test-chain",
+            poem_ids=["poem-1", "poem-2"],
+            positions=[1],  # Wrong length
+        )
+
+        assert result["success"] is False
+        assert "length" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_add_with_invalid_position(self, mock_catalog, sample_poem):
+        """Test adding poems with invalid position value."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(sample_poem("poem-1"))
+
+        initialize_chain_tools(mock_catalog)
+
+        result = await add_poems_to_chain(
+            chain_id="test-chain",
+            poem_ids=["poem-1"],
+            positions=[0],  # Invalid: must be >= 1
+        )
+
+        assert result["success"] is False
+        assert "positive" in result["error"]
+
+
+class TestRemovePoemsFromChain:
+    """Test remove_poems_from_chain tool."""
+
+    @pytest.mark.asyncio
+    async def test_remove_single_poem(self, mock_catalog, sample_poem):
+        """Test removing a single poem from chain."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(sample_poem("poem-1", chains=["water"]))
+        mock_catalog.index.add_poem(sample_poem("poem-2", chains=["water"]))
+
+        initialize_chain_tools(mock_catalog)
+
+        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
+            mock_update.return_value = Mock(success=True, backup_path=None)
+
+            result = await remove_poems_from_chain(
+                chain_id="water",
+                poem_ids=["poem-1"],
+            )
+
+            assert result["success"] is True
+            assert "poem-1" in result["poems_affected"]
+
+    @pytest.mark.asyncio
+    async def test_remove_multiple_poems(self, mock_catalog, sample_poem):
+        """Test removing multiple poems from chain."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(sample_poem("poem-1", chains=["water"]))
+        mock_catalog.index.add_poem(sample_poem("poem-2", chains=["water"]))
+        mock_catalog.index.add_poem(sample_poem("poem-3", chains=["water"]))
+
+        initialize_chain_tools(mock_catalog)
+
+        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
+            mock_update.return_value = Mock(success=True, backup_path=None)
+
+            result = await remove_poems_from_chain(
+                chain_id="water",
+                poem_ids=["poem-1", "poem-2"],
+            )
+
+            assert result["success"] is True
+            assert len(result["poems_affected"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_remove_poem_not_in_chain(self, mock_catalog, sample_poem):
+        """Test removing poem that's not in the chain."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(sample_poem("poem-1", chains=["other"]))
+
+        initialize_chain_tools(mock_catalog)
+
+        result = await remove_poems_from_chain(
+            chain_id="water",
+            poem_ids=["poem-1"],
+        )
+
+        assert result["success"] is False
+        assert "not in chain" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_remove_from_nonexistent_chain(self, mock_catalog, sample_poem):
+        """Test removing from a chain that doesn't exist."""
+        mock_catalog.index.clear()
+        mock_catalog.index.add_poem(sample_poem("poem-1"))
+
+        initialize_chain_tools(mock_catalog)
+
+        result = await remove_poems_from_chain(
+            chain_id="nonexistent",
+            poem_ids=["poem-1"],
+        )
+
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_remove_poem_not_found(self, mock_catalog):
+        """Test removing non-existent poem."""
+        initialize_chain_tools(mock_catalog)
+
+        result = await remove_poems_from_chain(
+            chain_id="water",
+            poem_ids=["nonexistent"],
+        )
+
+        assert result["success"] is False
+        assert "not found" in result["error"]

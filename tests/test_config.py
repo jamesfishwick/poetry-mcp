@@ -149,14 +149,14 @@ class TestSearchConfig:
         """Test SearchConfig with default values."""
         config = SearchConfig()
 
-        assert config.default_limit == 20
+        assert config.default_limit == 50
         assert config.case_sensitive is False
 
     def test_search_config_custom_values(self):
         """Test SearchConfig with custom values."""
-        config = SearchConfig(default_limit=50, case_sensitive=True)
+        config = SearchConfig(default_limit=100, case_sensitive=True)
 
-        assert config.default_limit == 50
+        assert config.default_limit == 100
         assert config.case_sensitive is True
 
     def test_search_config_min_limit(self):
@@ -312,7 +312,7 @@ class TestPoetryMCPConfig:
         assert isinstance(config.search, SearchConfig)
         assert isinstance(config.logging, LoggingConfig)
         assert isinstance(config.performance, PerformanceConfig)
-        assert config.search.default_limit == 20
+        assert config.search.default_limit == 50
         assert config.logging.level == "INFO"
 
     def test_complete_config_serialization(self, tmp_path):
@@ -497,7 +497,7 @@ vault:
 
         assert config.vault.path == vault.resolve()
         # Check defaults are applied
-        assert config.search.default_limit == 20
+        assert config.search.default_limit == 50
         assert config.logging.level == "INFO"
 
     def test_load_empty_config_file_raises_error(self, tmp_path):
