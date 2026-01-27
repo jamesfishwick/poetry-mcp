@@ -52,6 +52,16 @@ from .tools.enrichment_tools import (
     move_poem_to_state as _move_poem_to_state,
     grade_poem_quality as _grade_poem_quality,
 )
+from .tools.chain_tools import (
+    initialize_chain_tools,
+    create_chain as _create_chain,
+    add_poems_to_chain as _add_poems_to_chain,
+    remove_poems_from_chain as _remove_poems_from_chain,
+    reorder_chain as _reorder_chain,
+    delete_chain as _delete_chain,
+    get_chain as _get_chain,
+    list_chains as _list_chains,
+)
 
 
 # Configure logging
@@ -213,11 +223,12 @@ async def query_poems(
     forms: Optional[List[str]] = None,
     tags: Optional[List[str]] = None,
     tag_match_mode: str = "all",  # "all" or "any"
+    chain_id: Optional[str] = None,  # Filter by chain membership
     # Quality filters  
     min_quality_score: Optional[int] = None,
     quality_dimensions: Optional[List[str]] = None,
     # Sorting
-    sort_by: str = "relevance",  # relevance, title, created_at, updated_at, word_count
+    sort_by: str = "relevance",  # relevance, title, created_at, updated_at, word_count, chain_position
     # Output control
     limit: Optional[int] = None,
     include_content: bool = False,
@@ -234,9 +245,11 @@ async def query_poems(
         forms: Filter by forms (e.g., ["free_verse", "prose_poem"])
         tags: Filter by tags  
         tag_match_mode: "all" (must have all tags) or "any" (at least one tag)
+        chain_id: Filter by chain membership (only poems in this chain)
         min_quality_score: Minimum score threshold (0-10) for quality filtering
         quality_dimensions: Quality dimensions to filter on (e.g., ["detail", "mystery"])
-        sort_by: Sort field - "relevance" (default), "title", "created_at", "updated_at", "word_count"
+        sort_by: Sort field - "relevance" (default), "title", "created_at", "updated_at", 
+                 "word_count", "chain_position" (requires chain_id)
         limit: Maximum results (default from config)
         include_content: Include full poem text in results
     
@@ -263,6 +276,9 @@ async def query_poems(
         
         # Single nexus lookup (reverse tag lookup)
         await query_poems(tags=["Water-Liquid Imagery"])
+        
+        # Get poems in a chain, sorted by position
+        await query_poems(chain_id="water-sequence", sort_by="chain_position")
         ```
     """
     import time
@@ -304,6 +320,12 @@ async def query_poems(
                 if any(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
             ]
     
+    # Apply chain filter
+    if chain_id:
+        normalized_chain = chain_id.lower().strip().replace(" ", "-")
+        chain_poem_ids = set(cat.index.by_chain.get(normalized_chain, []))
+        results = [p for p in results if p.id in chain_poem_ids]
+    
     # Apply quality score filter
     if min_quality_score is not None and quality_dimensions:
         filtered_results = []
@@ -334,6 +356,14 @@ async def query_poems(
         results.sort(key=lambda p: p.updated_at, reverse=True)
     elif sort_by == "word_count":
         results.sort(key=lambda p: p.word_count, reverse=True)
+    elif sort_by == "chain_position" and chain_id:
+        # Sort by position in chain (ordered poems first, then loose by title)
+        normalized_chain = chain_id.lower().strip().replace(" ", "-")
+        def chain_sort_key(poem: Poem) -> tuple:
+            if poem.chain_positions and normalized_chain in poem.chain_positions:
+                return (0, poem.chain_positions[normalized_chain], "")
+            return (1, 0, poem.title.lower())
+        results.sort(key=chain_sort_key)
     elif sort_by == "relevance" and tags:
         # Sort by tag match relevance
         def relevance_score(poem: Poem) -> int:
@@ -1646,6 +1676,234 @@ async def delete_nexus(
         )
 
 
+# =============================================================================
+# CHAIN TOOLS - For linking poems into sequences or collections
+# =============================================================================
+
+
+@mcp.tool()
+async def create_chain(
+    chain_id: str,
+    poem_ids: list[str],
+    ordered: bool = False,
+) -> dict:
+    """
+    Create a new chain with initial poems.
+
+    Chains allow grouping poems into ordered sequences (for reading in order)
+    or loose collections (thematic groupings). All chain data is stored in
+    poem frontmatter.
+
+    Args:
+        chain_id: Unique identifier for the chain (will be normalized to lowercase-with-hyphens)
+        poem_ids: List of poem IDs to include. Order matters if ordered=True.
+        ordered: If True, assign positions (1, 2, 3...) to poems for reading order
+
+    Returns:
+        Dictionary with operation details including success status and positions
+
+    Example:
+        Create an ordered reading sequence:
+        ```
+        result = await create_chain(
+            chain_id="water-sequence",
+            poem_ids=["antlion", "second-bridge", "river-poem"],
+            ordered=True
+        )
+        print(f"Created chain with {len(result['poems_affected'])} poems")
+        print(f"Positions: {result['positions']}")
+        ```
+
+        Create a loose thematic collection:
+        ```
+        result = await create_chain(
+            chain_id="grief-poems",
+            poem_ids=["elegy", "absence", "memorial"],
+            ordered=False
+        )
+        ```
+    """
+    return await _create_chain(chain_id, poem_ids, ordered)
+
+
+@mcp.tool()
+async def add_poems_to_chain(
+    chain_id: str,
+    poem_ids: list[str],
+    positions: Optional[List[int]] = None,
+) -> dict:
+    """
+    Add poems to an existing chain.
+
+    Args:
+        chain_id: Chain to add poems to
+        poem_ids: Poems to add
+        positions: Optional positions for ordered chains. Must match length of poem_ids.
+                  If not provided, poems are added without positions (loose collection style).
+
+    Returns:
+        Dictionary with operation details
+
+    Example:
+        Add with specific positions:
+        ```
+        result = await add_poems_to_chain(
+            chain_id="water-sequence",
+            poem_ids=["new-poem"],
+            positions=[4]  # Add as 4th in sequence
+        )
+        ```
+
+        Add to loose collection:
+        ```
+        result = await add_poems_to_chain(
+            chain_id="grief-poems",
+            poem_ids=["new-elegy", "another-loss"]
+        )
+        ```
+    """
+    return await _add_poems_to_chain(chain_id, poem_ids, positions)
+
+
+@mcp.tool()
+async def remove_poems_from_chain(
+    chain_id: str,
+    poem_ids: list[str],
+    compact_positions: bool = True,
+) -> dict:
+    """
+    Remove poems from a chain.
+
+    Args:
+        chain_id: Chain to remove poems from
+        poem_ids: Poems to remove
+        compact_positions: If True (default), renumber remaining poems to close gaps
+                          in ordered chains. E.g., [1,2,4,5] becomes [1,2,3,4]
+
+    Returns:
+        Dictionary with operation details and updated positions
+
+    Example:
+        ```
+        result = await remove_poems_from_chain(
+            chain_id="water-sequence",
+            poem_ids=["river-poem"],
+            compact_positions=True
+        )
+        print(f"Remaining positions: {result['positions']}")
+        ```
+    """
+    return await _remove_poems_from_chain(chain_id, poem_ids, compact_positions)
+
+
+@mcp.tool()
+async def reorder_chain(
+    chain_id: str,
+    poem_order: list[str],
+) -> dict:
+    """
+    Reorder poems in a chain.
+
+    Sets new positions for all poems in the chain. Useful for rearranging
+    a reading sequence.
+
+    Args:
+        chain_id: Chain to reorder
+        poem_order: New order of poem IDs. Must include ALL poems currently in chain.
+
+    Returns:
+        Dictionary with new positions
+
+    Example:
+        ```
+        # Move "river-poem" to the front
+        result = await reorder_chain(
+            chain_id="water-sequence",
+            poem_order=["river-poem", "antlion", "second-bridge"]
+        )
+        print(f"New order: {result['positions']}")
+        # Output: {'river-poem': 1, 'antlion': 2, 'second-bridge': 3}
+        ```
+    """
+    return await _reorder_chain(chain_id, poem_order)
+
+
+@mcp.tool()
+async def delete_chain(chain_id: str) -> dict:
+    """
+    Delete a chain entirely, removing it from all poems.
+
+    This removes the chain membership and any positions from all poems in the chain.
+    Poems themselves are not deleted.
+
+    Args:
+        chain_id: Chain to delete
+
+    Returns:
+        Dictionary with list of affected poems
+
+    Example:
+        ```
+        result = await delete_chain("old-sequence")
+        print(f"Removed chain from {len(result['poems_affected'])} poems")
+        ```
+    """
+    return await _delete_chain(chain_id)
+
+
+@mcp.tool()
+async def get_chain(
+    chain_id: str,
+    include_content: bool = False,
+) -> dict:
+    """
+    Get information about a chain and its poems.
+
+    Returns poems in order (by position for ordered chains, then alphabetically
+    for loose members).
+
+    Args:
+        chain_id: Chain to retrieve
+        include_content: If True, include full poem text in results
+
+    Returns:
+        Dictionary with chain info and poem list
+
+    Example:
+        ```
+        result = await get_chain("water-sequence")
+        print(f"Chain has {result['poem_count']} poems")
+        print(f"Is ordered: {result['is_ordered']}")
+        for poem in result['poems']:
+            print(f"  {poem.get('position', '-')}. {poem['title']}")
+        ```
+    """
+    return await _get_chain(chain_id, include_content)
+
+
+@mcp.tool()
+async def list_chains() -> dict:
+    """
+    List all chains with basic stats.
+
+    Returns:
+        Dictionary with list of chains, each containing:
+        - chain_id: Identifier
+        - poem_count: Number of poems in chain
+        - is_ordered: Whether any poems have positions
+
+    Example:
+        ```
+        result = await list_chains()
+        print(f"Total chains: {result['total_chains']}")
+        for chain in result['chains']:
+            order_type = "ordered" if chain['is_ordered'] else "loose"
+            print(f"  {chain['chain_id']}: {chain['poem_count']} poems ({order_type})")
+        ```
+    """
+    return await _list_chains()
+
+
 def main() -> None:
     """Main entry point for the MCP server."""
     logger.info("Starting Poetry MCP Server...")
@@ -1670,6 +1928,14 @@ def main() -> None:
         logger.info("Enrichment tools initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize enrichment tools: {e}")
+
+    # Initialize chain tools
+    logger.info("Initializing chain tools...")
+    try:
+        initialize_chain_tools(cat)
+        logger.info("Chain tools initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize chain tools: {e}")
 
     # Auto-validate tags on startup if enabled
     try:

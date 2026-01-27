@@ -21,10 +21,18 @@ class FrontmatterUpdateResult(BaseModel):
     success: bool
     file_path: str
     backup_path: Optional[str] = None
+    # Tag updates
     tags_added: list[str] = []
     tags_removed: list[str] = []
-    error: Optional[str] = None
     _final_tags: Optional[list[str]] = None
+    # Chain updates
+    chains_added: list[str] = []
+    chains_removed: list[str] = []
+    positions_updated: Optional[dict[str, int]] = None
+    _final_chains: Optional[list[str]] = None
+    _final_positions: Optional[dict[str, int]] = None
+    # Error
+    error: Optional[str] = None
 
     @property
     def updated_tags(self) -> list[str]:
@@ -33,6 +41,18 @@ class FrontmatterUpdateResult(BaseModel):
             return self._final_tags
         # Fallback: return tags_added (tests may expect this)
         return self.tags_added
+
+    @property
+    def updated_chains(self) -> list[str]:
+        """Return final list of chains after update."""
+        if self._final_chains is not None:
+            return self._final_chains
+        return self.chains_added
+
+    @property
+    def updated_positions(self) -> Optional[dict[str, int]]:
+        """Return final chain positions after update."""
+        return self._final_positions
 
 
 def extract_frontmatter_and_content(content: str, file_path: Path) -> tuple[dict[str, Any], str]:
@@ -304,6 +324,148 @@ def update_poem_tags(
         result.tags_added = added
         result.tags_removed = removed
         result._final_tags = final_tags
+
+        # Serialize back to markdown
+        new_content = serialize_frontmatter_and_content(frontmatter, content_body)
+
+        # Validate YAML before writing
+        try:
+            # Re-parse to validate
+            extract_frontmatter_and_content(new_content, file_path)
+        except Exception as e:
+            result.error = f"YAML validation failed: {e}"
+            return result
+
+        # Atomic write
+        atomic_write(file_path, new_content)
+
+        result.success = True
+        return result
+
+    except Exception as e:
+        result.error = str(e)
+        return result
+
+
+def update_poem_chains(
+    file_path: Path | str,
+    chains_to_add: Optional[list[str]] = None,
+    chains_to_remove: Optional[list[str]] = None,
+    position_updates: Optional[dict[str, Optional[int]]] = None,
+    create_backup_file: bool = True,
+) -> FrontmatterUpdateResult:
+    """Update chain membership and positions in a poem's frontmatter.
+
+    Safely adds/removes chains and updates positions while preserving all other
+    frontmatter fields. Uses atomic writes with optional backup for safety.
+
+    Args:
+        file_path: Path to poem markdown file (Path object or string)
+        chains_to_add: List of chain IDs to add the poem to
+        chains_to_remove: List of chain IDs to remove the poem from
+        position_updates: Dict of chain_id -> position. Use None value to remove
+                         position (convert to loose collection).
+        create_backup_file: Whether to create .bak file before updating
+
+    Returns:
+        FrontmatterUpdateResult with operation details
+
+    Example:
+        >>> result = update_poem_chains(
+        ...     Path("poem.md"),
+        ...     chains_to_add=["water-sequence"],
+        ...     position_updates={"water-sequence": 3},
+        ... )
+        >>> result.success
+        True
+        >>> result.chains_added
+        ['water-sequence']
+    """
+    # Convert to Path if string
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
+
+    chains_to_add = chains_to_add or []
+    chains_to_remove = chains_to_remove or []
+    position_updates = position_updates or {}
+
+    result = FrontmatterUpdateResult(
+        success=False,
+        file_path=str(file_path),
+    )
+
+    try:
+        # Read current file
+        if not file_path.exists():
+            result.error = f"File not found: {file_path}"
+            return result
+
+        content = file_path.read_text(encoding="utf-8")
+
+        # Extract frontmatter and content
+        frontmatter, content_body = extract_frontmatter_and_content(content, file_path)
+
+        # Create backup if requested
+        backup_path = None
+        if create_backup_file:
+            backup_path = create_backup(file_path)
+            result.backup_path = str(backup_path)
+
+        # Get current chains (handle missing field)
+        current_chains = set(frontmatter.get("chains", []))
+        current_positions = dict(frontmatter.get("chain_positions", {}) or {})
+
+        # Normalize chain IDs
+        def normalize(chain_id: str) -> str:
+            return chain_id.lower().strip().replace(" ", "-")
+
+        # Add new chains
+        added = []
+        for chain in chains_to_add:
+            normalized = normalize(chain)
+            if normalized not in current_chains:
+                current_chains.add(normalized)
+                added.append(normalized)
+
+        # Remove chains
+        removed = []
+        for chain in chains_to_remove:
+            normalized = normalize(chain)
+            if normalized in current_chains:
+                current_chains.remove(normalized)
+                removed.append(normalized)
+                # Also remove position if present
+                current_positions.pop(normalized, None)
+
+        # Update positions
+        positions_set = {}
+        for chain_id, position in position_updates.items():
+            normalized = normalize(chain_id)
+            if position is None:
+                # Remove position (convert to loose)
+                current_positions.pop(normalized, None)
+            else:
+                if normalized in current_chains:
+                    current_positions[normalized] = position
+                    positions_set[normalized] = position
+
+        # Update frontmatter
+        final_chains = sorted(current_chains)  # Sort for consistency
+        frontmatter["chains"] = final_chains if final_chains else []
+
+        # Only include chain_positions if there are any
+        if current_positions:
+            frontmatter["chain_positions"] = dict(sorted(current_positions.items()))
+        elif "chain_positions" in frontmatter:
+            del frontmatter["chain_positions"]
+
+        frontmatter["updated_at"] = datetime.now().isoformat()
+
+        result.chains_added = added
+        result.chains_removed = removed
+        result.positions_updated = positions_set if positions_set else None
+        result._final_chains = final_chains
+        result._final_positions = current_positions if current_positions else None
 
         # Serialize back to markdown
         new_content = serialize_frontmatter_and_content(frontmatter, content_body)

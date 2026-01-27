@@ -216,6 +216,55 @@ class NexusOperationResult(BaseModel):
     error: Optional[str] = Field(None, description="Error message if operation failed")
 
 
+class ChainOperationResult(BaseModel):
+    """
+    Result from chain modification operations.
+
+    Reports success status, affected poems, and position updates.
+    """
+
+    success: bool = Field(..., description="Whether operation succeeded")
+    chain_id: str = Field(..., description="Chain identifier")
+    poems_affected: list[str] = Field(
+        default_factory=list, description="Poem IDs modified"
+    )
+    error: Optional[str] = Field(None, description="Error message if failed")
+    positions: Optional[dict[str, int]] = Field(
+        None, description="Final positions after operation (for ordered chains)"
+    )
+    backup_paths: Optional[list[str]] = Field(
+        None, description="Backup file paths created"
+    )
+
+
+class ChainInfo(BaseModel):
+    """
+    Information about a chain and its poems.
+
+    Used by get_chain and list_chains tools.
+    """
+
+    chain_id: str = Field(..., description="Chain identifier")
+    poem_count: int = Field(..., description="Number of poems in chain")
+    is_ordered: bool = Field(
+        ..., description="Whether chain has any poems with positions"
+    )
+    poems: Optional[list[Poem]] = Field(
+        None, description="Poems in chain (if requested)"
+    )
+
+
+class ChainListResult(BaseModel):
+    """
+    Result from list_chains operation.
+
+    Returns all chains with basic stats.
+    """
+
+    chains: list[ChainInfo] = Field(..., description="All chains with info")
+    total_chains: int = Field(..., description="Total number of chains")
+
+
 class PoemsByNexusResult(BaseModel):
     """
     Result from get_poems_by_nexus operation.

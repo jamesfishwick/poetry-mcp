@@ -43,6 +43,9 @@ class CatalogIndex:
         # Tag index (poem_id -> tags, tag -> poem_ids)
         self.by_tag: dict[str, set[str]] = defaultdict(set)  # tag -> poem IDs
 
+        # Chain index (chain_id -> poem IDs)
+        self.by_chain: dict[str, list[str]] = defaultdict(list)
+
         # All poems list (for iteration)
         self.all_poems: list[Poem] = []
 
@@ -64,6 +67,10 @@ class CatalogIndex:
         # Tag index
         for tag in poem.tags:
             self.by_tag[tag.lower()].add(poem.id)
+
+        # Chain index
+        for chain_id in poem.chains:
+            self.by_chain[chain_id.lower()].append(poem.id)
 
         # All poems
         self.all_poems.append(poem)
@@ -133,6 +140,38 @@ class CatalogIndex:
             matching_ids = set.union(*tag_sets) if tag_sets else set()
 
         return [self.by_id[pid] for pid in matching_ids if pid in self.by_id]
+
+    def get_by_chain(self, chain_id: str, ordered: bool = True) -> list[Poem]:
+        """
+        Get all poems in a chain.
+
+        Args:
+            chain_id: Chain identifier
+            ordered: If True, return ordered by position (if available), else by title
+
+        Returns:
+            List of poems in the chain
+        """
+        poem_ids = self.by_chain.get(chain_id.lower(), [])
+        poems = [self.by_id[pid] for pid in poem_ids if pid in self.by_id]
+
+        if ordered and poems:
+            chain_lower = chain_id.lower()
+
+            def sort_key(poem: Poem) -> tuple:
+                # Poems with positions come first, sorted by position
+                # Then poems without positions, sorted by title
+                if poem.chain_positions and chain_lower in poem.chain_positions:
+                    return (0, poem.chain_positions[chain_lower], "")
+                return (1, 0, poem.title.lower())
+
+            poems.sort(key=sort_key)
+
+        return poems
+
+    def get_all_chains(self) -> dict[str, int]:
+        """Get all chain IDs with poem counts."""
+        return {chain_id: len(poem_ids) for chain_id, poem_ids in self.by_chain.items()}
 
     def search_content(self, query: str, case_sensitive: bool = False) -> list[Poem]:
         """
@@ -207,6 +246,7 @@ class CatalogIndex:
         self.by_state.clear()
         self.by_form.clear()
         self.by_tag.clear()
+        self.by_chain.clear()
         self.all_poems.clear()
 
 

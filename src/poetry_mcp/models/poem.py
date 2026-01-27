@@ -74,6 +74,15 @@ class Poem(BaseModel):
         default=None, description="Quality scores (0-10) keyed by dimension name"
     )
 
+    # Chain membership (for linking poems into sequences or collections)
+    chains: list[str] = Field(
+        default_factory=list, description="Chain IDs this poem belongs to"
+    )
+    chain_positions: Optional[dict[str, int]] = Field(
+        default=None,
+        description="Position in ordered chains (chain_id -> position). Absence means loose collection.",
+    )
+
     @field_validator("state")
     @classmethod
     def validate_state(cls, v: str) -> str:
@@ -147,6 +156,35 @@ class Poem(BaseModel):
         # Return sorted by key for consistency
         return dict(sorted(normalized.items()))
 
+    @field_validator("chains")
+    @classmethod
+    def normalize_chains(cls, v: list[str]) -> list[str]:
+        """Normalize chain IDs: lowercase, replace spaces with hyphens, remove duplicates."""
+        if not v:
+            return []
+        normalized = [chain.lower().strip().replace(" ", "-") for chain in v if chain.strip()]
+        return list(dict.fromkeys(normalized))  # Preserve order, remove dupes
+
+    @field_validator("chain_positions")
+    @classmethod
+    def validate_chain_positions(
+        cls, v: Optional[dict[str, int]]
+    ) -> Optional[dict[str, int]]:
+        """Validate chain positions: positive integers only, normalize chain IDs."""
+        if v is None:
+            return None
+
+        validated = {}
+        for chain_id, position in v.items():
+            chain_normalized = chain_id.lower().strip().replace(" ", "-")
+            if not isinstance(position, int) or position < 1:
+                raise ValueError(
+                    f"Position for chain '{chain_id}' must be positive integer, got: {position}"
+                )
+            validated[chain_normalized] = position
+
+        return validated
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -170,6 +208,8 @@ class Poem(BaseModel):
                     "syntax": 8,
                     "unity": 9,
                 },
+                "chains": ["water-sequence", "random-snippets"],
+                "chain_positions": {"water-sequence": 3},
             }
         }
     )
