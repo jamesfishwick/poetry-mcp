@@ -73,6 +73,7 @@ async def create_chain(
 
     # Normalize chain ID
     normalized_chain = chain_id.lower().strip().replace(" ", "-")
+    logger.info(f"Creating chain '{normalized_chain}' with {len(poem_ids)} poems (ordered={ordered})")
 
     # Validate all poems exist
     poems = []
@@ -122,6 +123,7 @@ async def create_chain(
                 "success": False,
                 "chain_id": normalized_chain,
                 "poems_affected": poems_affected,
+                "backup_paths": backup_paths,
                 "error": f"Failed to update {poem.id}: {result.error}",
             }
 
@@ -130,7 +132,10 @@ async def create_chain(
             backup_paths.append(result.backup_path)
 
     # Resync catalog
-    cat.sync(force_rescan=True)
+    try:
+        cat.sync(force_rescan=True)
+    except Exception as e:
+        logger.warning(f"Catalog sync failed after creating chain: {e}")
 
     return {
         "success": True,
@@ -165,12 +170,14 @@ async def add_poems_to_chain(
     cat = _get_catalog()
 
     normalized_chain = chain_id.lower().strip().replace(" ", "-")
+    logger.info(f"Adding {len(poem_ids)} poems to chain '{normalized_chain}'")
 
     # Validate all poems exist
     poems = []
     for pid in poem_ids:
         poem = cat.index.get_by_id_or_title(pid)
         if poem is None:
+            logger.warning(f"Poem not found when adding to chain: {pid}")
             return {
                 "success": False,
                 "chain_id": normalized_chain,
@@ -221,6 +228,7 @@ async def add_poems_to_chain(
                 "success": False,
                 "chain_id": normalized_chain,
                 "poems_affected": poems_affected,
+                "backup_paths": backup_paths,
                 "error": f"Failed to update {poem.id}: {result.error}",
             }
 
@@ -229,7 +237,10 @@ async def add_poems_to_chain(
             backup_paths.append(result.backup_path)
 
     # Resync catalog
-    cat.sync(force_rescan=True)
+    try:
+        cat.sync(force_rescan=True)
+    except Exception as e:
+        logger.warning(f"Catalog sync failed after adding poems to chain: {e}")
 
     # Get updated positions
     final_positions = {}
@@ -265,12 +276,14 @@ async def remove_poems_from_chain(
     cat = _get_catalog()
 
     normalized_chain = chain_id.lower().strip().replace(" ", "-")
+    logger.info(f"Removing {len(poem_ids)} poems from chain '{normalized_chain}' (compact={compact_positions})")
 
     # Validate all poems exist and are in chain
     poems = []
     for pid in poem_ids:
         poem = cat.index.get_by_id_or_title(pid)
         if poem is None:
+            logger.warning(f"Poem not found when removing from chain: {pid}")
             return {
                 "success": False,
                 "chain_id": normalized_chain,
@@ -302,6 +315,7 @@ async def remove_poems_from_chain(
                 "success": False,
                 "chain_id": normalized_chain,
                 "poems_affected": poems_affected,
+                "backup_paths": backup_paths,
                 "error": f"Failed to update {poem.id}: {result.error}",
             }
 
@@ -310,10 +324,14 @@ async def remove_poems_from_chain(
             backup_paths.append(result.backup_path)
 
     # Resync catalog
-    cat.sync(force_rescan=True)
+    try:
+        cat.sync(force_rescan=True)
+    except Exception as e:
+        logger.warning(f"Catalog sync failed after removing poems from chain: {e}")
 
     # Compact positions if requested
     final_positions = None
+    compaction_errors = []
     if compact_positions:
         # Get remaining poems in chain, sorted by position
         remaining = cat.index.get_by_chain(normalized_chain, ordered=True)
@@ -325,14 +343,22 @@ async def remove_poems_from_chain(
                     new_pos = i + 1
                     if current_pos != new_pos:
                         poem_path = cat.vault_root / poem.file_path
-                        update_poem_chains(
+                        compact_result = update_poem_chains(
                             poem_path,
                             position_updates={normalized_chain: new_pos},
                             create_backup_file=False,
                         )
+                        if not compact_result.success:
+                            logger.warning(
+                                f"Position compaction failed for {poem.id}: {compact_result.error}"
+                            )
+                            compaction_errors.append(poem.id)
 
             # Resync again after compaction
-            cat.sync(force_rescan=True)
+            try:
+                cat.sync(force_rescan=True)
+            except Exception as e:
+                logger.warning(f"Catalog sync failed after position compaction: {e}")
 
             # Get final positions
             final_positions = {}
@@ -340,13 +366,17 @@ async def remove_poems_from_chain(
                 if poem.chain_positions and normalized_chain in poem.chain_positions:
                     final_positions[poem.id] = poem.chain_positions[normalized_chain]
 
-    return {
+    result = {
         "success": True,
         "chain_id": normalized_chain,
         "poems_affected": poems_affected,
         "positions": final_positions,
         "backup_paths": backup_paths,
     }
+    if compaction_errors:
+        result["compaction_warnings"] = f"Failed to compact positions for: {compaction_errors}"
+
+    return result
 
 
 async def reorder_chain(
@@ -365,6 +395,7 @@ async def reorder_chain(
     cat = _get_catalog()
 
     normalized_chain = chain_id.lower().strip().replace(" ", "-")
+    logger.info(f"Reordering chain '{normalized_chain}' with {len(poem_order)} poems")
 
     # Get current poems in chain
     current_poems = cat.index.get_by_chain(normalized_chain, ordered=False)
@@ -393,7 +424,15 @@ async def reorder_chain(
     for i, poem_id in enumerate(poem_order):
         poem = cat.index.get_by_id(poem_id)
         if poem is None:
-            continue
+            # This should not happen since we validated poem_order against current_ids
+            logger.error(f"Poem {poem_id} not found during reorder despite passing validation")
+            return {
+                "success": False,
+                "chain_id": normalized_chain,
+                "poems_affected": poems_affected,
+                "backup_paths": backup_paths,
+                "error": f"Poem disappeared during reorder: {poem_id}",
+            }
 
         poem_path = cat.vault_root / poem.file_path
         result = update_poem_chains(
@@ -407,6 +446,7 @@ async def reorder_chain(
                 "success": False,
                 "chain_id": normalized_chain,
                 "poems_affected": poems_affected,
+                "backup_paths": backup_paths,
                 "error": f"Failed to update {poem_id}: {result.error}",
             }
 
@@ -415,7 +455,10 @@ async def reorder_chain(
             backup_paths.append(result.backup_path)
 
     # Resync catalog
-    cat.sync(force_rescan=True)
+    try:
+        cat.sync(force_rescan=True)
+    except Exception as e:
+        logger.warning(f"Catalog sync failed after reordering chain: {e}")
 
     return {
         "success": True,
@@ -438,11 +481,13 @@ async def delete_chain(chain_id: str) -> dict[str, Any]:
     cat = _get_catalog()
 
     normalized_chain = chain_id.lower().strip().replace(" ", "-")
+    logger.info(f"Deleting chain '{normalized_chain}'")
 
     # Get all poems in chain
     poems = cat.index.get_by_chain(normalized_chain, ordered=False)
 
     if not poems:
+        logger.warning(f"Chain not found or empty: {normalized_chain}")
         return {
             "success": False,
             "chain_id": normalized_chain,
@@ -467,6 +512,7 @@ async def delete_chain(chain_id: str) -> dict[str, Any]:
                 "success": False,
                 "chain_id": normalized_chain,
                 "poems_affected": poems_affected,
+                "backup_paths": backup_paths,
                 "error": f"Failed to update {poem.id}: {result.error}",
             }
 
@@ -475,7 +521,10 @@ async def delete_chain(chain_id: str) -> dict[str, Any]:
             backup_paths.append(result.backup_path)
 
     # Resync catalog
-    cat.sync(force_rescan=True)
+    try:
+        cat.sync(force_rescan=True)
+    except Exception as e:
+        logger.warning(f"Catalog sync failed after deleting chain: {e}")
 
     return {
         "success": True,
