@@ -1,4 +1,4 @@
-"""MCP tools for catalog, nexus, submission, and chain management."""
+"""MCP tools for catalog, nexus, submission, chain, and similarity management."""
 
 from .chain_tools import (
     initialize_chain_tools,
@@ -10,6 +10,10 @@ from .chain_tools import (
     get_chain,
     list_chains,
 )
+from .similarity_tools import (
+    initialize_similarity_tools,
+    find_similar_poems,
+)
 
 __all__ = [
     "initialize_chain_tools",
@@ -20,4 +24,6 @@ __all__ = [
     "delete_chain",
     "get_chain",
     "list_chains",
+    "initialize_similarity_tools",
+    "find_similar_poems",
 ]

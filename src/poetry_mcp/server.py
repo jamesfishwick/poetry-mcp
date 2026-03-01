@@ -3,7 +3,6 @@
 FastMCP server providing tools for poetry catalog and nexus management.
 """
 
-import asyncio
 import logging
 import sys
 from typing import Optional, List, Any
@@ -28,7 +27,6 @@ from .models.results import (
     SyncResult,
     SearchResult,
     CatalogStats,
-    ValidationResult,
     NexusOperationResult,
     PoemsByNexusResult,
     NexusCountsResult,
@@ -39,6 +37,7 @@ from .models.results import (
     RegenerateVenueResult,
     SubmissionListResult,
     VenueListResult,
+    SimilarityResult,
 )
 from .models.nexus import NexusRegistry
 from .writers.venue_writer import VenueWriter
@@ -61,6 +60,10 @@ from .tools.chain_tools import (
     delete_chain as _delete_chain,
     get_chain as _get_chain,
     list_chains as _list_chains,
+)
+from .tools.similarity_tools import (
+    initialize_similarity_tools,
+    find_similar_poems as _find_similar_poems,
 )
 
 
@@ -1349,111 +1352,6 @@ async def refresh_nexus_poem_counts() -> NexusCountsResult:
 
 
 @mcp.tool()
-async def validate_poem_tags() -> ValidationResult:
-    """
-    Validate that all poem tags match nexus canonical_tags.
-
-    STRICT VALIDATION: Tags in poems MUST match canonical_tags defined
-    in nexuses. This tool identifies violations of the tag policy.
-
-    Tag Policy:
-    - Tags represent thematic connections (water, bones, childhood)
-    - All tags must match a nexus canonical_tag
-    - No free-text tags allowed (use dedicated fields instead)
-    - Workflow metadata goes in specific fields (status, draft, etc.)
-
-    Returns:
-        ValidationResult with validation status and detailed violations
-
-    Example:
-        ```
-        result = await validate_poem_tags()
-
-        if not result.valid:
-            print(f"❌ Found {result.violations_count} invalid tags")
-            for tag in result.invalid_tags:
-                print(f"  - '{tag}' (no nexus definition)")
-
-            print(f"\nAffected poems ({len(result.affected_poems)}):")
-            for poem in result.affected_poems:
-                print(f"  {poem['title']}: {poem['invalid_tags']}")
-        else:
-            print("✅ All tags valid!")
-        ```
-
-    Note:
-        Invalid tags indicate:
-        - Typos in manual tagging → Fix the tag
-        - Free-text metadata → Move to dedicated field
-        - Deleted nexus → Create nexus or remove tag
-        - Legacy tags → Clean up or migrate to nexuses
-
-        Use cleanup workflow:
-        1. Run validate_poem_tags() to find violations
-        2. Fix manually in Obsidian or use frontmatter_writer
-        3. Re-sync catalog
-        4. Validate again until clean
-    """
-    cat = get_catalog()
-    registry = await get_all_nexuses()
-
-    # Collect all valid canonical tags from nexuses
-    valid_tags = set()
-    for nexus_list in [registry.themes, registry.motifs, registry.forms]:
-        for nexus in nexus_list:
-            if nexus.canonical_tag:
-                valid_tags.add(nexus.canonical_tag.lower())
-
-    # Validate all tags in poems
-    all_tags_checked = set()
-    poems_with_invalid = []
-    total_poems_checked = 0
-
-    for poem in cat.index.all_poems:
-        total_poems_checked += 1
-        if poem.tags:
-            invalid_tags_in_poem = []
-            for tag in poem.tags:
-                tag_lower = tag.lower()
-                all_tags_checked.add(tag_lower)
-
-                # Check if tag is invalid (doesn't match any nexus)
-                if tag_lower not in valid_tags:
-                    invalid_tags_in_poem.append(tag)
-
-            # If poem has invalid tags, record it
-            if invalid_tags_in_poem:
-                poems_with_invalid.append({
-                    "id": poem.id,
-                    "title": poem.title,
-                    "invalid_tags": invalid_tags_in_poem,
-                    "file_path": str(poem.file_path),
-                })
-
-    # Find all unique invalid tags
-    invalid_tags = sorted(all_tags_checked - valid_tags)
-
-    # Determine if validation passed
-    is_valid = len(invalid_tags) == 0
-
-    if is_valid:
-        logger.info(f"✅ Tag validation passed: {total_poems_checked} poems, {len(all_tags_checked)} tags, all valid")
-    else:
-        logger.warning(f"❌ Tag validation failed: {len(invalid_tags)} invalid tags across {len(poems_with_invalid)} poems")
-
-    return ValidationResult(
-        success=is_valid,
-        valid=is_valid,
-        invalid_tags=invalid_tags,
-        violations_count=len(invalid_tags),
-        affected_poems=poems_with_invalid,
-        total_poems_checked=total_poems_checked,
-        total_tags_checked=len(all_tags_checked),
-        valid_tags=sorted(valid_tags),
-    )
-
-
-@mcp.tool()
 async def create_nexus(
     name: str,
     category: str,
@@ -1524,6 +1422,12 @@ async def create_nexus(
         # Refresh nexus registry to include new nexus
         cat = get_catalog()
         initialize_enrichment_tools(cat)
+        try:
+            from .parsers.nexus_parser import load_nexus_registry
+            config = load_config()
+            initialize_similarity_tools(cat, load_nexus_registry(config.vault.path))
+        except Exception:
+            pass
         logger.info("Nexus registry refreshed")
 
         return NexusOperationResult(
@@ -1587,7 +1491,7 @@ async def delete_nexus(
         deleted from the filesystem.
 
         If cleanup_poems=False, poems with this tag will keep the tag,
-        creating orphaned references (use validate_poem_tags to detect).
+        creating orphaned references.
 
         If cleanup_poems=True, the tag will be removed from all poems,
         which may affect your tagging structure.
@@ -1658,6 +1562,12 @@ async def delete_nexus(
 
         # Refresh nexus registry to remove deleted nexus
         initialize_enrichment_tools(cat)
+        try:
+            from .parsers.nexus_parser import load_nexus_registry
+            config = load_config()
+            initialize_similarity_tools(cat, load_nexus_registry(config.vault.path))
+        except Exception:
+            pass
         logger.info("Nexus registry refreshed")
 
         return NexusOperationResult(
@@ -1904,6 +1814,48 @@ async def list_chains() -> dict:
     return await _list_chains()
 
 
+# ─── Similarity Tools ────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def find_similar_poems(
+    poem_id: str,
+    limit: int = 10,
+    include_content: bool = False,
+) -> SimilarityResult:
+    """Find poems similar to a given poem through metadata connections.
+
+    Scores candidates by four signals (ordered by strength):
+    1. Shared nexus membership (canonical_tags) -- weight 3.0
+    2. Shared chain co-membership -- weight 2.0
+    3. Shared plain tags (non-nexus) -- weight 1.0
+    4. Same form -- weight 0.5
+
+    Args:
+        poem_id: Poem identifier (ID or title)
+        limit: Maximum number of similar poems to return (default 10)
+        include_content: Whether to include full poem text in results
+
+    Returns:
+        SimilarityResult with ranked matches and similarity metadata
+
+    Example:
+        ```
+        result = await find_similar_poems("antlion")
+        for match in result.matches:
+            print(f"{match.poem.title}: {match.similarity_score}")
+            print(f"  Shared nexuses: {match.shared_nexuses}")
+            print(f"  Shared tags: {match.shared_tags}")
+            print(f"  Shared chains: {match.shared_chains}")
+        ```
+    """
+    return await _find_similar_poems(
+        poem_id=poem_id,
+        limit=limit,
+        include_content=include_content,
+    )
+
+
 def main() -> None:
     """Main entry point for the MCP server."""
     logger.info("Starting Poetry MCP Server...")
@@ -1937,27 +1889,18 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Failed to initialize chain tools: {e}")
 
-    # Auto-validate tags on startup if enabled
+    # Initialize similarity tools
+    logger.info("Initializing similarity tools...")
     try:
-        from .config import get_config
-        cfg = get_config()
-        if cfg.validation.auto_validate_on_sync:
-            logger.info("Running tag validation on startup...")
-            validation_result = asyncio.run(validate_poem_tags())
-
-            if validation_result['valid']:
-                logger.info("✅ Tag validation passed - all tags match nexus definitions")
-            else:
-                logger.warning(
-                    f"⚠️  Found {validation_result['violations_count']} invalid tags "
-                    f"across {len(validation_result['affected_poems'])} poems"
-                )
-                logger.warning(f"Invalid tags: {', '.join(validation_result['invalid_tags'][:5])}")
-                if len(validation_result['invalid_tags']) > 5:
-                    logger.warning(f"... and {len(validation_result['invalid_tags']) - 5} more")
+        from .parsers.nexus_parser import load_nexus_registry
+        config = load_config()
+        nexus_registry = load_nexus_registry(config.vault.path)
+        initialize_similarity_tools(cat, nexus_registry)
+        logger.info("Similarity tools initialized successfully")
     except Exception as e:
-        logger.error(f"Tag validation failed: {e}")
-        # Continue anyway - validation failure shouldn't prevent server startup
+        logger.warning(f"Similarity tools initialized without nexus registry: {e}")
+        # Degrade gracefully -- all tags treated as plain tags
+        initialize_similarity_tools(cat)
 
     # Run the server
     mcp.run()

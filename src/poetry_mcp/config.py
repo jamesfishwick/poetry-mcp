@@ -98,18 +98,6 @@ class PerformanceConfig(BaseModel):
     )
 
 
-class ValidationConfig(BaseModel):
-    """Tag validation configuration."""
-
-    auto_validate_on_sync: bool = Field(
-        default=True, description="Automatically validate tags on server startup (after initial sync)"
-    )
-
-    strict_mode: bool = Field(
-        default=True, description="Enforce strict tag policy (tags must match nexus canonical_tags)"
-    )
-
-
 class PoetryMCPConfig(BaseModel):
     """Complete Poetry MCP configuration."""
 
@@ -117,7 +105,6 @@ class PoetryMCPConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
-    validation: ValidationConfig = Field(default_factory=ValidationConfig)
 
 
 def find_config_file() -> Optional[Path]:
@@ -302,10 +289,6 @@ def create_default_config(vault_path: Path, config_path: Optional[Path] = None) 
             "watch_debounce_seconds": 2.0,
             "cache_expiry_seconds": 3600,
         },
-        "validation": {
-            "auto_validate_on_sync": True,
-            "strict_mode": True,
-        },
     }
 
     # Write YAML file
@@ -358,10 +341,6 @@ def save_config(config: PoetryMCPConfig, config_path: Optional[Path] = None) -> 
             "watch_files": config.performance.watch_files,
             "watch_debounce_seconds": config.performance.watch_debounce_seconds,
             "cache_expiry_seconds": config.performance.cache_expiry_seconds,
-        },
-        "validation": {
-            "auto_validate_on_sync": config.validation.auto_validate_on_sync,
-            "strict_mode": config.validation.strict_mode,
         },
     }
 
