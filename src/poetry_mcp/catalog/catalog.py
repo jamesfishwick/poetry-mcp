@@ -175,14 +175,17 @@ class CatalogIndex:
 
     def search_content(self, query: str, case_sensitive: bool = False) -> list[Poem]:
         """
-        Search poem content for query string.
+        Search poem content for query words.
+
+        Splits query into individual words and matches poems containing ANY word.
+        Poems are scored by number of matching words (more matches = higher relevance).
 
         Args:
-            query: Text to search for
+            query: Text to search for (words are OR-matched)
             case_sensitive: Whether search is case-sensitive
 
         Returns:
-            List of poems containing query
+            List of poems containing any query word, sorted by relevance (most matches first)
         """
         if not query:
             return []
@@ -190,17 +193,25 @@ class CatalogIndex:
         if not case_sensitive:
             query = query.lower()
 
-        results = []
+        query_words = query.split()
+        if not query_words:
+            return []
+
+        scored_results: list[tuple[int, Poem]] = []
         for poem in self.all_poems:
             # Search in title, content, notes
             search_text = f"{poem.title} {poem.content or ''} {poem.notes or ''}"
             if not case_sensitive:
                 search_text = search_text.lower()
 
-            if query in search_text:
-                results.append(poem)
+            # Count matching words for relevance scoring
+            match_count = sum(1 for word in query_words if word in search_text)
+            if match_count > 0:
+                scored_results.append((match_count, poem))
 
-        return results
+        # Sort by match count descending (most relevant first)
+        scored_results.sort(key=lambda x: x[0], reverse=True)
+        return [poem for _, poem in scored_results]
 
     def get_stats(self) -> dict:
         """Get catalog statistics."""

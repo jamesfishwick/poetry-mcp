@@ -163,25 +163,73 @@ class TestCatalogIndex:
         result = index.get_by_tags([], match_mode="any")
         assert result == []
 
+    def test_search_content_single_word(self, sample_poems):
+        """Test single-word search matches in content and title."""
+        index = CatalogIndex()
+        for poem in sample_poems:
+            index.add_poem(poem)
+
+        # Single word in content
+        result = index.search_content("water")
+        assert len(result) == 1
+        assert result[0].id == "poem1"
+
+        # Single word in content of another poem
+        result = index.search_content("burns")
+        assert len(result) == 1
+        assert result[0].id == "poem2"
+
     def test_search_content_case_insensitive(self, sample_poems):
         """Test content search is case-insensitive by default."""
         index = CatalogIndex()
         for poem in sample_poems:
             index.add_poem(poem)
 
-        # Search in content
-        result = index.search_content("water")
+        result = index.search_content("WATER")
         assert len(result) == 1
         assert result[0].id == "poem1"
 
-        # Search in title
-        result = index.search_content("fire poem")
+        result = index.search_content("fire")
         assert len(result) == 1
         assert result[0].id == "poem2"
 
-        # Case variations
-        result = index.search_content("WATER")
+    def test_search_content_multi_word_or_matching(self, sample_poems):
+        """Test multi-word query uses OR matching (any word matches)."""
+        index = CatalogIndex()
+        for poem in sample_poems:
+            index.add_poem(poem)
+
+        # "fire water" should match both poem1 (water) and poem2 (fire)
+        result = index.search_content("fire water")
+        assert len(result) == 2
+        ids = {p.id for p in result}
+        assert ids == {"poem1", "poem2"}
+
+    def test_search_content_relevance_ordering(self, sample_poems):
+        """Test results are ordered by number of matching words (most relevant first)."""
+        index = CatalogIndex()
+        for poem in sample_poems:
+            index.add_poem(poem)
+
+        # "water flows" - poem1 matches both words (2 hits), no other poem matches
+        result = index.search_content("water flows")
         assert len(result) == 1
+        assert result[0].id == "poem1"
+
+        # "fire burns water" - poem2 matches 2 words (fire, burns), poem1 matches 1 (water)
+        result = index.search_content("fire burns water")
+        assert len(result) == 2
+        assert result[0].id == "poem2"  # 2 matches: fire, burns
+        assert result[1].id == "poem1"  # 1 match: water
+
+    def test_search_content_no_matches(self, sample_poems):
+        """Test query with no matching words returns empty."""
+        index = CatalogIndex()
+        for poem in sample_poems:
+            index.add_poem(poem)
+
+        result = index.search_content("elephant rhinoceros")
+        assert len(result) == 0
 
     def test_search_content_case_sensitive(self, sample_poems):
         """Test case-sensitive content search."""
