@@ -6,7 +6,7 @@ This is the core of the v2.0 architecture: data comes from frontmatter, not BASE
 
 import re
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import yaml
 
@@ -48,8 +48,8 @@ def parse_poem_file(file_path: Path, vault_root: Path) -> Poem:
     title = extract_title(poem_content, file_path)
 
     # Get file timestamps
-    created_at = datetime.fromtimestamp(file_path.stat().st_ctime)
-    updated_at = datetime.fromtimestamp(file_path.stat().st_mtime)
+    created_at = datetime.fromtimestamp(file_path.stat().st_ctime, tz=timezone.utc)
+    updated_at = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
 
     # Compute metrics
     word_count = count_words(poem_content)
