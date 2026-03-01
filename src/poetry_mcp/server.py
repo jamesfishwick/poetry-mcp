@@ -375,9 +375,9 @@ async def query_poems(
     total_matches = len(results)
     results = results[:limit]
     
-    # Remove content if not requested
+    # Remove content if not requested (use model_copy to avoid re-validation)
     if not include_content:
-        results = [Poem(**{**p.model_dump(), "content": None}) for p in results]
+        results = [p.model_copy(update={"content": None}) for p in results]
     
     query_time_ms = (time.perf_counter() - start_time) * 1000
     
