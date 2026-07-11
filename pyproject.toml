@@ -14,7 +14,10 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
-[project.optional-dependencies]
+# Dev tooling lives in a dependency group (PEP 735) so `uv sync` / `uv run`
+# install it into the project venv by default. As a plain optional-extra it was
+# not installed, so `uv run pytest` fell back to an unrelated system interpreter.
+[dependency-groups]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
