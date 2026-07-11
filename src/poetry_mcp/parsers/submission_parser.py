@@ -12,7 +12,7 @@ from datetime import date, datetime
 import yaml
 from pydantic import ValidationError
 
-from poetry_mcp.models.submission import Submission, SubmissionStatus
+from poetry_mcp.models.submission import Submission
 from poetry_mcp.errors import BaseParseError as ParseError
 
 

@@ -95,14 +95,7 @@ async def create_chain(
             "error": f"Poems already in chain: {[p.id for p in existing]}",
         }
 
-    # Build position updates if ordered
-    position_updates: Optional[dict[str, Optional[int]]] = None
-    if ordered:
-        position_updates = {
-            poems[i].id: i + 1 for i in range(len(poems))
-        }
-
-    # Update each poem
+    # Update each poem (per-poem position is computed inline in the loop below)
     backup_paths = []
     poems_affected = []
 

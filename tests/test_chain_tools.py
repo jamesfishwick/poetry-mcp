@@ -2,16 +2,13 @@
 
 import pytest
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from poetry_mcp.models.poem import Poem
 from poetry_mcp.catalog.catalog import Catalog, CatalogIndex
 from poetry_mcp.tools.chain_tools import (
     initialize_chain_tools,
     create_chain,
-    add_poems_to_chain,
-    remove_poems_from_chain,
     reorder_chain,
     delete_chain,
     get_chain,
