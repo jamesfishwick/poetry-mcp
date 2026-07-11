@@ -387,3 +387,35 @@ class VenueListResult(BaseModel):
     venues: List[Venue] = Field(default_factory=list, description="Matching venues")
     total_count: int = Field(..., description="Total number of matching venues")
     filters_applied: dict = Field(..., description="Filters used in query")
+
+
+class SubmissionStatusChange(BaseModel):
+    """A single submission whose status was (or would be) changed."""
+
+    source_file: str = Field(..., description="Absolute path to the submission file")
+    venue_name: str = Field(..., description="Venue for this submission")
+    poems: List[str] = Field(default_factory=list, description="Poems in this submission")
+    old_status: str = Field(..., description="Status before the change")
+    new_status: str = Field(..., description="Status after the change")
+
+
+class UpdateSubmissionStatusResult(BaseModel):
+    """
+    Result from update_submission_status operation.
+
+    In dry_run mode the changes are previewed but not written; the `changes`
+    list still reflects exactly what would be modified.
+    """
+
+    success: bool = Field(..., description="Whether the operation succeeded")
+    dry_run: bool = Field(..., description="If True, no files were written")
+    new_status: str = Field(..., description="Target status applied to matches")
+    matched_count: int = Field(..., description="Number of submissions matched")
+    changes: List[SubmissionStatusChange] = Field(
+        default_factory=list, description="Per-file changes made (or previewed)"
+    )
+    backups: List[str] = Field(
+        default_factory=list, description="Paths to .bak backups created (empty on dry_run)"
+    )
+    filters_applied: dict = Field(..., description="Selection filters used")
+    error: Optional[str] = Field(None, description="Error message if the operation failed")

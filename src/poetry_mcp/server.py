@@ -5,6 +5,7 @@ FastMCP server providing tools for poetry catalog and nexus management.
 
 import asyncio
 import logging
+import re
 import sys
 from typing import Optional, List, Any
 
@@ -39,6 +40,8 @@ from .models.results import (
     RegenerateVenueResult,
     SubmissionListResult,
     VenueListResult,
+    SubmissionStatusChange,
+    UpdateSubmissionStatusResult,
 )
 from .models.nexus import NexusRegistry
 from .writers.venue_writer import VenueWriter
@@ -1049,6 +1052,142 @@ async def list_submissions(
             "poem": poem,
             "limit": limit,
         },
+    )
+
+
+@mcp.tool()
+async def update_submission_status(
+    new_status: SubmissionStatus,
+    venue: Optional[str] = None,
+    poem: Optional[str] = None,
+    current_status: Optional[SubmissionStatus] = None,
+    dry_run: bool = True,
+) -> UpdateSubmissionStatusResult:
+    """
+    Bulk-update the status of submissions matching a selection.
+
+    Selects submissions by venue, poem, and/or current status, then sets each
+    match's status to new_status. At least one selector (venue, poem, or
+    current_status) is required so an unfiltered call cannot rewrite every
+    submission by accident.
+
+    Runs in preview mode by default: with dry_run=True (the default) nothing is
+    written and `changes` shows exactly what would be modified. Re-run with
+    dry_run=False to apply. Each written file is backed up to a .bak sibling
+    first (same mechanism as quality-score commits).
+
+    Args:
+        new_status: Status to apply (planned, submitted, accepted, rejected, withdrawn)
+        venue: Only submissions for this venue
+        poem: Only submissions containing this poem title
+        current_status: Only submissions currently in this status
+        dry_run: If True (default), preview without writing
+
+    Returns:
+        UpdateSubmissionStatusResult with the matched submissions, the per-file
+        changes (or previewed changes), and paths to any backups created.
+
+    Example:
+        ```
+        # Preview marking every pending Rattle submission rejected
+        await update_submission_status(new_status="rejected", venue="Rattle",
+                                       current_status="submitted")
+
+        # Apply it
+        await update_submission_status(new_status="rejected", venue="Rattle",
+                                       current_status="submitted", dry_run=False)
+        ```
+    """
+    if not (venue or poem or current_status):
+        return UpdateSubmissionStatusResult(
+            success=False,
+            dry_run=dry_run,
+            new_status=new_status,
+            matched_count=0,
+            filters_applied={"venue": venue, "poem": poem, "current_status": current_status},
+            error=(
+                "Refusing to update all submissions: provide at least one of "
+                "venue, poem, or current_status to scope the change."
+            ),
+        )
+
+    sub_cat = get_submission_catalog()
+    matches = sub_cat.filter_submissions(venue=venue, status=current_status, poem=poem)
+
+    submitted_states = {"submitted", "accepted", "rejected", "withdrawn"}
+    changes: list[SubmissionStatusChange] = []
+    backups: list[str] = []
+
+    from pathlib import Path
+    import yaml
+    from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
+    from poetry_mcp.writers.frontmatter_writer import create_backup
+
+    for sub in matches:
+        # Skip no-ops so we neither back up nor rewrite unchanged files.
+        if sub.status == new_status:
+            continue
+
+        change = SubmissionStatusChange(
+            source_file=sub.source_file or "",
+            venue_name=sub.venue_name,
+            poems=sub.poems,
+            old_status=sub.status,
+            new_status=new_status,
+        )
+        changes.append(change)
+
+        if dry_run:
+            continue
+
+        if not sub.source_file:
+            return UpdateSubmissionStatusResult(
+                success=False,
+                dry_run=False,
+                new_status=new_status,
+                matched_count=len(matches),
+                changes=changes,
+                backups=backups,
+                filters_applied={"venue": venue, "poem": poem, "current_status": current_status},
+                error=f"Submission for {sub.venue_name} has no source_file; cannot write.",
+            )
+
+        file_path = Path(sub.source_file)
+        content = file_path.read_text(encoding="utf-8")
+        frontmatter, body = extract_frontmatter(content, file_path)
+
+        frontmatter["status"] = new_status
+        # Keep an explicit submitted flag consistent with the new status.
+        if "submitted" in frontmatter:
+            frontmatter["submitted"] = new_status in submitted_states
+
+        # Best-effort: keep the human-readable body "**Status**:" line in sync.
+        body = re.sub(
+            r"^(\*\*Status\*\*:).*$",
+            rf"\1 {new_status.title()}",
+            body,
+            count=1,
+            flags=re.MULTILINE,
+        )
+
+        fm_yaml = yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True)
+        new_content = f"---\n{fm_yaml}---\n{body}"
+
+        backups.append(str(create_backup(file_path)))
+        file_path.write_text(new_content, encoding="utf-8")
+
+    if not dry_run and changes:
+        sub_cat.sync(force_rescan=True)
+        logger.info(f"Updated {len(changes)} submissions to status '{new_status}'")
+
+    return UpdateSubmissionStatusResult(
+        success=True,
+        dry_run=dry_run,
+        new_status=new_status,
+        matched_count=len(matches),
+        changes=changes,
+        backups=backups,
+        filters_applied={"venue": venue, "poem": poem, "current_status": current_status},
     )
 
 
