@@ -77,10 +77,14 @@ class SubmissionParser:
         if not data["venue_name"]:
             raise ParseError(f"Missing venue_name in {file_path}")
 
-        # Poems - extract from ## Poems section wikilinks
-        poems = self._extract_poems_from_body(body, file_path)
+        # Poems - prefer the ## Poems section; fall back to frontmatter for
+        # legacy/archive files that predate the wikilink schema.
+        poems = self._extract_poems(frontmatter, body)
         if not poems:
-            raise ParseError(f"No poems found in ## Poems section in {file_path}")
+            raise ParseError(
+                f"No poems found in {file_path}: expected a '## Poems' section with "
+                f"[[wikilinks]], or a 'poems' list / 'poem_id' in frontmatter"
+            )
         data["poems"] = poems
 
         # Status - normalize aliases
@@ -151,41 +155,64 @@ class SubmissionParser:
 
         raise ParseError(f"Invalid date format in {file_path}: {value}")
 
-    def _extract_poems_from_body(self, body: str, file_path: Path) -> list[str]:
+    def _extract_poems(self, frontmatter: dict, body: str) -> list[str]:
         """
-        Extract poem titles from [[wikilinks]] in ## Poems section.
-        
+        Resolve poem titles for a submission.
+
+        Resolution order (first non-empty wins):
+          1. ``## Poems`` section wikilinks (current schema)
+          2. frontmatter ``poems`` list or string (explicit override; multi-poem archives)
+          3. frontmatter ``poem_id`` string (legacy single-poem/archive schema)
+
+        Returns an empty list if none are present; the caller raises with a
+        message listing all accepted forms.
+        """
+        poems = self._extract_poems_from_body(body)
+        if poems:
+            return poems
+
+        fm_poems = frontmatter.get("poems")
+        if isinstance(fm_poems, list):
+            cleaned = [str(p).strip() for p in fm_poems if str(p).strip()]
+            if cleaned:
+                return cleaned
+        elif isinstance(fm_poems, str) and fm_poems.strip():
+            return [fm_poems.strip()]
+
+        poem_id = frontmatter.get("poem_id")
+        if isinstance(poem_id, str) and poem_id.strip():
+            return [poem_id.strip()]
+
+        return []
+
+    def _extract_poems_from_body(self, body: str) -> list[str]:
+        """
+        Extract poem titles from [[wikilinks]] in the ## Poems section.
+
         Args:
             body: Markdown body content after frontmatter
-            file_path: Path to file (for error reporting)
-            
+
         Returns:
-            List of poem titles extracted from wikilinks
-            
-        Raises:
-            ParseError: If ## Poems section not found or no wikilinks present
+            List of poem titles from wikilinks, or an empty list if the section
+            is absent or contains no wikilinks. Never raises; the caller decides
+            whether an empty result is an error after trying frontmatter fallbacks.
         """
         # Find ## Poems section
         poems_match = re.search(r'^##\s+Poems\s*$', body, re.MULTILINE)
         if not poems_match:
-            raise ParseError(f"No ## Poems section found in {file_path}")
-        
+            return []
+
         # Extract content from ## Poems to next ## heading or end of file
         start_pos = poems_match.end()
         next_section = re.search(r'^##\s+', body[start_pos:], re.MULTILINE)
-        
+
         if next_section:
             poems_content = body[start_pos:start_pos + next_section.start()]
         else:
             poems_content = body[start_pos:]
-        
+
         # Extract all [[wikilinks]] from poems section
-        wikilinks = re.findall(r'\[\[([^\]]+)\]\]', poems_content)
-        
-        if not wikilinks:
-            raise ParseError(f"No [[wikilinks]] found in ## Poems section in {file_path}")
-        
-        return wikilinks
+        return re.findall(r'\[\[([^\]]+)\]\]', poems_content)
 
     def generate_filename(
         self,
