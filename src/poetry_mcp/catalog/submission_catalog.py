@@ -220,23 +220,31 @@ class SubmissionCatalog:
         Returns:
             List of matching submissions
         """
-        # Start with all submissions
-        results = set(self.index.all_submissions)
+        # Intersect on object identity rather than the objects themselves:
+        # Submission is a Pydantic BaseModel and is unhashable, so it cannot go
+        # in a set(). The index stores the same instances across every lookup,
+        # so id() is a stable, field-independent key for AND-combining filters.
+        results = list(self.index.all_submissions)
 
         # Apply filters
         if venue:
-            results &= set(self.index.get_by_venue(venue))
+            allowed = {id(s) for s in self.index.get_by_venue(venue)}
+            results = [s for s in results if id(s) in allowed]
 
         if status:
-            results &= set(self.index.get_by_status(status))
+            allowed = {id(s) for s in self.index.get_by_status(status)}
+            results = [s for s in results if id(s) in allowed]
 
         if poem:
-            results &= set(self.index.get_by_poem(poem))
+            allowed = {id(s) for s in self.index.get_by_poem(poem)}
+            results = [s for s in results if id(s) in allowed]
 
-        # Sort by submission date (most recent first)
+        # Sort by submission date (most recent first). Stringify the key so
+        # real date objects (ISO, e.g. "2024-08-01") and fuzzy string dates
+        # (e.g. "2014-XX-XX") compare without a str-vs-date TypeError.
         sorted_results = sorted(
             results,
-            key=lambda s: s.submitted_date if s.submitted_date else "",
+            key=lambda s: str(s.submitted_date) if s.submitted_date else "",
             reverse=True,
         )
 
