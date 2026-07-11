@@ -176,9 +176,12 @@ class NexusManager:
 
         # Update canonical_tag in frontmatter if provided
         if new_canonical_tag:
-            # Simple replace - in production you'd parse YAML properly
+            # Simple replace - in production you'd parse YAML properly.
+            # Extract the current tag first: a backslash escape ('\n') inside an
+            # f-string expression is a SyntaxError on Python < 3.12.
+            current_canonical_tag = content.split("canonical_tag: ")[1].split("\n")[0]
             content = content.replace(
-                f"canonical_tag: {content.split('canonical_tag: ')[1].split('\n')[0]}",
+                f"canonical_tag: {current_canonical_tag}",
                 f"canonical_tag: {new_canonical_tag}",
                 1,
             )
