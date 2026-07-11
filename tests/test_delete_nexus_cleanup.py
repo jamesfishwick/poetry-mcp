@@ -51,11 +51,9 @@ def test_delete_nexus_cleanup_removes_tag_and_counts(tmp_path):
     manager = Mock()
     manager.delete_nexus.return_value = {"deleted": "nexus/themes/obsolete.md"}
 
-    # get_all_nexuses is a FunctionTool; delete_nexus calls it via `.fn()`.
-    nexuses_tool = Mock(fn=AsyncMock(return_value=registry))
-
+    # delete_nexus calls the plain enrichment impl (_get_all_nexuses).
     with patch.object(server_module, "get_catalog", return_value=cat), patch.object(
-        server_module, "get_all_nexuses", nexuses_tool
+        server_module, "_get_all_nexuses", AsyncMock(return_value=registry)
     ), patch.object(server_module, "get_nexus_manager", return_value=manager), patch.object(
         server_module, "initialize_enrichment_tools"
     ):
@@ -92,10 +90,9 @@ def test_delete_nexus_cleanup_surfaces_partial_failures(tmp_path):
 
     manager = Mock()
     manager.delete_nexus.return_value = {"deleted": "nexus/themes/obsolete.md"}
-    nexuses_tool = Mock(fn=AsyncMock(return_value=registry))
 
     with patch.object(server_module, "get_catalog", return_value=cat), patch.object(
-        server_module, "get_all_nexuses", nexuses_tool
+        server_module, "_get_all_nexuses", AsyncMock(return_value=registry)
     ), patch.object(server_module, "get_nexus_manager", return_value=manager), patch.object(
         server_module, "initialize_enrichment_tools"
     ):
