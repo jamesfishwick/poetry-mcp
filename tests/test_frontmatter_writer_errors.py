@@ -4,19 +4,20 @@ This test file complements test_frontmatter_writer.py by focusing on error handl
 edge cases, and exceptional conditions not covered in the happy path tests.
 """
 
-import pytest
 from unittest.mock import patch
 
-from poetry_mcp.writers.frontmatter_writer import (
-    extract_frontmatter_and_content,
-    update_poem_tags,
-    update_poem_frontmatter,
-    create_backup,
-    rollback_from_backup,
-    atomic_write,
-    FrontmatterUpdateResult,
-)
+import pytest
+
 from poetry_mcp.errors import FrontmatterParseError
+from poetry_mcp.writers.frontmatter_writer import (
+    FrontmatterUpdateResult,
+    atomic_write,
+    create_backup,
+    extract_frontmatter_and_content,
+    rollback_from_backup,
+    update_poem_frontmatter,
+    update_poem_tags,
+)
 
 
 @pytest.fixture
@@ -219,7 +220,7 @@ class TestRollbackFromBackup:
         backup_file.write_text("backup")
 
         # Mock shutil.copy2 to raise an error
-        with patch("shutil.copy2", side_effect=IOError("Copy failed")):
+        with patch("shutil.copy2", side_effect=OSError("Copy failed")):
             result = rollback_from_backup(poem_file)
 
             assert result is False

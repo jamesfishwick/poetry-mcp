@@ -6,14 +6,14 @@ Each file represents a single submission event.
 """
 
 import re
-from pathlib import Path
-from typing import Optional
 from datetime import date, datetime
+from pathlib import Path
+
 import yaml
 from pydantic import ValidationError
 
-from poetry_mcp.models.submission import Submission
 from poetry_mcp.errors import BaseParseError as ParseError
+from poetry_mcp.models.submission import Submission
 from poetry_mcp.utils import slugify_filename
 
 
@@ -134,7 +134,7 @@ class SubmissionParser:
 
         return data
 
-    def _parse_date_field(self, value: any, file_path: Path) -> Optional[date | str]:
+    def _parse_date_field(self, value: any, file_path: Path) -> date | str | None:
         """Parse a date field, supporting multiple formats."""
         if value is None:
             return None
@@ -199,27 +199,27 @@ class SubmissionParser:
             whether an empty result is an error after trying frontmatter fallbacks.
         """
         # Find ## Poems section
-        poems_match = re.search(r'^##\s+Poems\s*$', body, re.MULTILINE)
+        poems_match = re.search(r"^##\s+Poems\s*$", body, re.MULTILINE)
         if not poems_match:
             return []
 
         # Extract content from ## Poems to next ## heading or end of file
         start_pos = poems_match.end()
-        next_section = re.search(r'^##\s+', body[start_pos:], re.MULTILINE)
+        next_section = re.search(r"^##\s+", body[start_pos:], re.MULTILINE)
 
         if next_section:
-            poems_content = body[start_pos:start_pos + next_section.start()]
+            poems_content = body[start_pos : start_pos + next_section.start()]
         else:
             poems_content = body[start_pos:]
 
         # Extract all [[wikilinks]] from poems section
-        return re.findall(r'\[\[([^\]]+)\]\]', poems_content)
+        return re.findall(r"\[\[([^\]]+)\]\]", poems_content)
 
     def generate_filename(
         self,
         venue_name: str,
         poems: list[str],
-        submitted_date: Optional[date | str] = None,
+        submitted_date: date | str | None = None,
     ) -> str:
         """
         Generate canonical filename for a submission.

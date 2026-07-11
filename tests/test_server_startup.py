@@ -13,9 +13,10 @@ import poetry_mcp.server as server_module
 
 
 def test_main_fails_loud_when_catalog_sync_fails():
-    with patch.object(
-        server_module, "get_catalog", side_effect=RuntimeError("vault unreadable")
-    ), patch.object(server_module.mcp, "run") as mock_run:
+    with (
+        patch.object(server_module, "get_catalog", side_effect=RuntimeError("vault unreadable")),
+        patch.object(server_module.mcp, "run") as mock_run,
+    ):
         with pytest.raises(RuntimeError, match="vault unreadable"):
             server_module.main()
 

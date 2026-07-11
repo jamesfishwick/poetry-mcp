@@ -23,13 +23,7 @@ def _write_tagged_poem(tmp_path):
     (vault / "catalog").mkdir(parents=True)
     poem_file = vault / "catalog" / "obsolete_poem.md"
     poem_file.write_text(
-        "---\n"
-        "state: completed\n"
-        "tags:\n"
-        "  - obsolete\n"
-        "  - keep\n"
-        "---\n\n"
-        "# A Poem\n\nBody line\n"
+        "---\nstate: completed\ntags:\n  - obsolete\n  - keep\n---\n\n# A Poem\n\nBody line\n"
     )
     return vault, poem_file
 
@@ -52,10 +46,11 @@ def test_delete_nexus_cleanup_removes_tag_and_counts(tmp_path):
     manager.delete_nexus.return_value = {"deleted": "nexus/themes/obsolete.md"}
 
     # delete_nexus calls the plain enrichment impl (_get_all_nexuses).
-    with patch.object(server_module, "get_catalog", return_value=cat), patch.object(
-        server_module, "_get_all_nexuses", AsyncMock(return_value=registry)
-    ), patch.object(server_module, "get_nexus_manager", return_value=manager), patch.object(
-        server_module, "initialize_enrichment_tools"
+    with (
+        patch.object(server_module, "get_catalog", return_value=cat),
+        patch.object(server_module, "_get_all_nexuses", AsyncMock(return_value=registry)),
+        patch.object(server_module, "get_nexus_manager", return_value=manager),
+        patch.object(server_module, "initialize_enrichment_tools"),
     ):
         result = asyncio.run(
             server_module.delete_nexus.fn(
@@ -91,10 +86,11 @@ def test_delete_nexus_cleanup_surfaces_partial_failures(tmp_path):
     manager = Mock()
     manager.delete_nexus.return_value = {"deleted": "nexus/themes/obsolete.md"}
 
-    with patch.object(server_module, "get_catalog", return_value=cat), patch.object(
-        server_module, "_get_all_nexuses", AsyncMock(return_value=registry)
-    ), patch.object(server_module, "get_nexus_manager", return_value=manager), patch.object(
-        server_module, "initialize_enrichment_tools"
+    with (
+        patch.object(server_module, "get_catalog", return_value=cat),
+        patch.object(server_module, "_get_all_nexuses", AsyncMock(return_value=registry)),
+        patch.object(server_module, "get_nexus_manager", return_value=manager),
+        patch.object(server_module, "initialize_enrichment_tools"),
     ):
         result = asyncio.run(
             server_module.delete_nexus.fn(

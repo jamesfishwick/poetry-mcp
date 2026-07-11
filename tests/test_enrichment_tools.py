@@ -1,21 +1,22 @@
 """Tests for enrichment tools functionality."""
 
-import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from poetry_mcp.tools.enrichment_tools import (
-    initialize_enrichment_tools,
-    get_all_nexuses,
-    link_poem_to_nexus,
-    find_nexuses_for_poem,
-    get_poems_for_enrichment,
-    sync_nexus_tags,
-    move_poem_to_state,
-    grade_poem_quality,
-)
+import pytest
+
 from poetry_mcp.catalog.catalog import Catalog
 from poetry_mcp.models.nexus import NexusRegistry
+from poetry_mcp.tools.enrichment_tools import (
+    find_nexuses_for_poem,
+    get_all_nexuses,
+    get_poems_for_enrichment,
+    grade_poem_quality,
+    initialize_enrichment_tools,
+    link_poem_to_nexus,
+    move_poem_to_state,
+    sync_nexus_tags,
+)
 
 
 @pytest.fixture

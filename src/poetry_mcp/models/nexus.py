@@ -4,8 +4,9 @@ Nexuses are thematic/formal connection points for poems.
 Data comes from nexus markdown files and nexus.base view definition.
 """
 
-from typing import Literal, Optional
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Nexus(BaseModel):
@@ -29,18 +30,18 @@ class Nexus(BaseModel):
 
     description: str = Field(..., description="What this nexus represents, usage patterns")
 
-    file_path: Optional[str] = Field(
+    file_path: str | None = Field(
         default=None, description="Path to nexus markdown file relative to vault root"
     )
 
     # Optional: canonical tag for frontmatter tagging
-    canonical_tag: Optional[str] = Field(
+    canonical_tag: str | None = Field(
         default=None,
         description="Canonical tag name for poems (e.g., 'water', 'american-sentence')",
     )
 
     # Optional: count of linked poems (computed)
-    poem_count: Optional[int] = Field(
+    poem_count: int | None = Field(
         default=None, description="Number of poems connected to this nexus (computed)"
     )
 

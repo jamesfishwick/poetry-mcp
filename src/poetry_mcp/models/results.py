@@ -3,15 +3,16 @@
 These models structure the data returned by various MCP tools.
 """
 
-from typing import Any, Optional, List
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any
 
-from .poem import Poem
-from .nexus import Nexus
-from .quality import Quality
-from .venue import Venue
+from pydantic import BaseModel, ConfigDict, Field
+
 from .influence import Influence
+from .nexus import Nexus
+from .poem import Poem
+from .quality import Quality
 from .submission import Submission
+from .venue import Venue
 
 
 class SyncResult(BaseModel):
@@ -150,7 +151,7 @@ class CatalogStats(BaseModel):
 
     oldest_poem: str = Field(..., description="Title of oldest poem")
 
-    last_sync: Optional[str] = Field(default=None, description="Timestamp of last catalog sync")
+    last_sync: str | None = Field(default=None, description="Timestamp of last catalog sync")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -191,14 +192,18 @@ class ValidationResult(BaseModel):
 
     success: bool = Field(..., description="Whether validation passed (no invalid tags)")
     valid: bool = Field(..., description="Alias for success (backward compatibility)")
-    invalid_tags: List[str] = Field(default_factory=list, description="Tags that don't match any nexus")
+    invalid_tags: list[str] = Field(
+        default_factory=list, description="Tags that don't match any nexus"
+    )
     violations_count: int = Field(..., description="Number of invalid tags found")
-    affected_poems: List[dict] = Field(
+    affected_poems: list[dict] = Field(
         default_factory=list, description="Poems containing invalid tags"
     )
     total_poems_checked: int = Field(..., description="Total number of poems validated")
     total_tags_checked: int = Field(..., description="Total unique tags encountered")
-    valid_tags: List[str] = Field(default_factory=list, description="All valid nexus canonical tags")
+    valid_tags: list[str] = Field(
+        default_factory=list, description="All valid nexus canonical tags"
+    )
 
 
 class NexusOperationResult(BaseModel):
@@ -209,17 +214,17 @@ class NexusOperationResult(BaseModel):
     """
 
     success: bool = Field(..., description="Whether operation succeeded")
-    nexus: Optional[Nexus] = Field(None, description="Nexus object (for create operations)")
+    nexus: Nexus | None = Field(None, description="Nexus object (for create operations)")
     operation: str = Field(..., description="Operation performed (created/deleted/updated)")
-    file_path: Optional[str] = Field(None, description="Path to nexus file")
+    file_path: str | None = Field(None, description="Path to nexus file")
     poems_cleaned: int = Field(default=0, description="Number of poems cleaned up (delete only)")
     poems_failed: int = Field(
         default=0, description="Number of poems that failed cleanup (delete only)"
     )
-    cleanup_errors: List[str] = Field(
+    cleanup_errors: list[str] = Field(
         default_factory=list, description="Per-poem cleanup failure messages (delete only)"
     )
-    error: Optional[str] = Field(None, description="Error message if operation failed")
+    error: str | None = Field(None, description="Error message if operation failed")
 
 
 class ChainOperationResult(BaseModel):
@@ -231,16 +236,12 @@ class ChainOperationResult(BaseModel):
 
     success: bool = Field(..., description="Whether operation succeeded")
     chain_id: str = Field(..., description="Chain identifier")
-    poems_affected: list[str] = Field(
-        default_factory=list, description="Poem IDs modified"
-    )
-    error: Optional[str] = Field(None, description="Error message if failed")
-    positions: Optional[dict[str, int]] = Field(
+    poems_affected: list[str] = Field(default_factory=list, description="Poem IDs modified")
+    error: str | None = Field(None, description="Error message if failed")
+    positions: dict[str, int] | None = Field(
         None, description="Final positions after operation (for ordered chains)"
     )
-    backup_paths: Optional[list[str]] = Field(
-        None, description="Backup file paths created"
-    )
+    backup_paths: list[str] | None = Field(None, description="Backup file paths created")
 
 
 class ChainInfo(BaseModel):
@@ -252,12 +253,8 @@ class ChainInfo(BaseModel):
 
     chain_id: str = Field(..., description="Chain identifier")
     poem_count: int = Field(..., description="Number of poems in chain")
-    is_ordered: bool = Field(
-        ..., description="Whether chain has any poems with positions"
-    )
-    poems: Optional[list[Poem]] = Field(
-        None, description="Poems in chain (if requested)"
-    )
+    is_ordered: bool = Field(..., description="Whether chain has any poems with positions")
+    poems: list[Poem] | None = Field(None, description="Poems in chain (if requested)")
 
 
 class ChainListResult(BaseModel):
@@ -279,10 +276,10 @@ class PoemsByNexusResult(BaseModel):
     """
 
     success: bool = Field(..., description="Whether lookup succeeded")
-    nexus: Optional[Nexus] = Field(None, description="The nexus being queried")
-    poems: List[Poem] = Field(default_factory=list, description="Poems tagged with this nexus")
+    nexus: Nexus | None = Field(None, description="The nexus being queried")
+    poems: list[Poem] = Field(default_factory=list, description="Poems tagged with this nexus")
     total_count: int = Field(..., description="Total number of poems with this tag")
-    error: Optional[str] = Field(None, description="Error message if lookup failed")
+    error: str | None = Field(None, description="Error message if lookup failed")
 
 
 class NexusCountsResult(BaseModel):
@@ -298,7 +295,7 @@ class NexusCountsResult(BaseModel):
         ...,
         description="Statistics by category (themes/motifs/forms with count and total_poems)",
     )
-    top_nexuses: List[dict] = Field(..., description="Top 5 nexuses by poem count")
+    top_nexuses: list[dict] = Field(..., description="Top 5 nexuses by poem count")
 
 
 class ServerInfo(BaseModel):
@@ -350,9 +347,9 @@ class VenueDetailResult(BaseModel):
     """
 
     success: bool = Field(..., description="Whether venue lookup succeeded")
-    venue: Optional[Venue] = Field(None, description="Venue metadata")
-    submissions: List[Submission] = Field(default_factory=list, description="All venue submissions")
-    error: Optional[str] = Field(None, description="Error message if lookup failed")
+    venue: Venue | None = Field(None, description="Venue metadata")
+    submissions: list[Submission] = Field(default_factory=list, description="All venue submissions")
+    error: str | None = Field(None, description="Error message if lookup failed")
 
 
 class RegenerateVenueResult(BaseModel):
@@ -366,7 +363,7 @@ class RegenerateVenueResult(BaseModel):
     venue_name: str = Field(..., description="Name of venue regenerated")
     file_path: str = Field(..., description="Path to regenerated venue file")
     submissions_count: int = Field(..., description="Number of submissions in venue")
-    error: Optional[str] = Field(None, description="Error message if regeneration failed")
+    error: str | None = Field(None, description="Error message if regeneration failed")
 
 
 class SubmissionListResult(BaseModel):
@@ -377,7 +374,7 @@ class SubmissionListResult(BaseModel):
     """
 
     success: bool = Field(..., description="Whether query succeeded")
-    submissions: List[Submission] = Field(default_factory=list, description="Matching submissions")
+    submissions: list[Submission] = Field(default_factory=list, description="Matching submissions")
     total_count: int = Field(..., description="Total number of matching submissions")
     filters_applied: dict = Field(..., description="Filters used in query")
 
@@ -390,7 +387,7 @@ class VenueListResult(BaseModel):
     """
 
     success: bool = Field(..., description="Whether query succeeded")
-    venues: List[Venue] = Field(default_factory=list, description="Matching venues")
+    venues: list[Venue] = Field(default_factory=list, description="Matching venues")
     total_count: int = Field(..., description="Total number of matching venues")
     filters_applied: dict = Field(..., description="Filters used in query")
 
@@ -400,7 +397,7 @@ class SubmissionStatusChange(BaseModel):
 
     source_file: str = Field(..., description="Absolute path to the submission file")
     venue_name: str = Field(..., description="Venue for this submission")
-    poems: List[str] = Field(default_factory=list, description="Poems in this submission")
+    poems: list[str] = Field(default_factory=list, description="Poems in this submission")
     old_status: str = Field(..., description="Status before the change")
     new_status: str = Field(..., description="Status after the change")
 
@@ -417,14 +414,14 @@ class UpdateSubmissionStatusResult(BaseModel):
     dry_run: bool = Field(..., description="If True, no files were written")
     new_status: str = Field(..., description="Target status applied to matches")
     matched_count: int = Field(..., description="Number of submissions matched")
-    changes: List[SubmissionStatusChange] = Field(
+    changes: list[SubmissionStatusChange] = Field(
         default_factory=list, description="Per-file changes made (or previewed)"
     )
-    backups: List[str] = Field(
+    backups: list[str] = Field(
         default_factory=list, description="Paths to .bak backups created (empty on dry_run)"
     )
     filters_applied: dict = Field(..., description="Selection filters used")
-    error: Optional[str] = Field(None, description="Error message if the operation failed")
+    error: str | None = Field(None, description="Error message if the operation failed")
 
 
 class SimilarPoemMatch(BaseModel):
@@ -434,15 +431,15 @@ class SimilarPoemMatch(BaseModel):
     similarity_score: float = Field(
         ..., description="Weighted similarity score (higher = more similar)"
     )
-    shared_nexuses: List[str] = Field(
+    shared_nexuses: list[str] = Field(
         default_factory=list,
         description="Nexus canonical_tags shared with source poem",
     )
-    shared_tags: List[str] = Field(
+    shared_tags: list[str] = Field(
         default_factory=list,
         description="Non-nexus tags shared with source poem",
     )
-    shared_chains: List[str] = Field(
+    shared_chains: list[str] = Field(
         default_factory=list,
         description="Chain IDs both poems belong to",
     )
@@ -458,12 +455,10 @@ class SimilarityResult(BaseModel):
     success: bool = Field(..., description="Whether the operation succeeded")
     source_poem_id: str = Field(..., description="ID of the reference poem")
     source_poem_title: str = Field(..., description="Title of the reference poem")
-    matches: List[SimilarPoemMatch] = Field(
+    matches: list[SimilarPoemMatch] = Field(
         default_factory=list,
         description="Similar poems ranked by score (highest first)",
     )
-    total_candidates_scored: int = Field(
-        ..., description="Number of candidate poems evaluated"
-    )
+    total_candidates_scored: int = Field(..., description="Number of candidate poems evaluated")
     query_time_ms: float = Field(..., description="Time taken in milliseconds")
-    error: Optional[str] = Field(None, description="Error message if operation failed")
+    error: str | None = Field(None, description="Error message if operation failed")

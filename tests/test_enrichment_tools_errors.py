@@ -4,19 +4,21 @@ This test file complements test_enrichment_tools.py by focusing on error handlin
 edge cases, and exceptional conditions not covered in the happy path tests.
 """
 
-import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
+
+from poetry_mcp.catalog.catalog import Catalog
 from poetry_mcp.tools.enrichment_tools import (
-    initialize_enrichment_tools,
-    link_poem_to_nexus,
     find_nexuses_for_poem,
     get_poems_for_enrichment,
-    sync_nexus_tags,
-    move_poem_to_state,
     grade_poem_quality,
+    initialize_enrichment_tools,
+    link_poem_to_nexus,
+    move_poem_to_state,
+    sync_nexus_tags,
 )
-from poetry_mcp.catalog.catalog import Catalog
 
 
 @pytest.fixture
@@ -248,7 +250,7 @@ class TestGetPoemsForEnrichmentErrors:
         poem.content = ""
 
         # Now mock the file read to fail
-        with patch("pathlib.Path.read_text", side_effect=IOError("Read error")):
+        with patch("pathlib.Path.read_text", side_effect=OSError("Read error")):
             result = await get_poems_for_enrichment(poem_ids=["poem2"], max_poems=5)
 
             # Should succeed but mark content as unavailable
@@ -420,7 +422,7 @@ class TestGradePoemQualityErrors:
         poem = enrichment_tools._catalog.index.get_by_id("poem1")
         poem.content = ""
 
-        with patch("pathlib.Path.read_text", side_effect=IOError("Read error")):
+        with patch("pathlib.Path.read_text", side_effect=OSError("Read error")):
             result = await grade_poem_quality("poem1")
 
             assert result["success"] is False

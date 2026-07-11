@@ -8,8 +8,8 @@ from pathlib import Path
 
 import yaml
 
-from ..models.nexus import Nexus, NexusRegistry
 from ..errors import FrontmatterParseError
+from ..models.nexus import Nexus, NexusRegistry
 
 
 def extract_canonical_tag(file_path: Path) -> tuple[str, str]:

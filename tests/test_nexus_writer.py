@@ -105,7 +105,7 @@ class TestGenerateDefaultTemplate:
             canonical_tag="water",
         )
 
-        with patch.object(writer, '_get_today_iso', return_value='2025-01-26'):
+        with patch.object(writer, "_get_today_iso", return_value="2025-01-26"):
             template = writer._generate_default_template(nexus)
 
         assert "# Water-Liquid Imagery" in template
@@ -125,7 +125,7 @@ class TestGenerateDefaultTemplate:
             canonical_tag="american-grotesque",
         )
 
-        with patch.object(writer, '_get_today_iso', return_value='2025-01-26'):
+        with patch.object(writer, "_get_today_iso", return_value="2025-01-26"):
             template = writer._generate_default_template(nexus)
 
         assert "# American Grotesque" in template
@@ -142,7 +142,7 @@ class TestGenerateDefaultTemplate:
             canonical_tag="american-sentence",
         )
 
-        with patch.object(writer, '_get_today_iso', return_value='2025-01-26'):
+        with patch.object(writer, "_get_today_iso", return_value="2025-01-26"):
             template = writer._generate_default_template(nexus)
 
         assert "# American Sentence" in template
@@ -218,7 +218,7 @@ class TestGenerateNexusFile:
         )
         output_path = tmp_path / "nexus" / "themes" / "test_theme.md"
 
-        with patch.object(writer, '_get_today_iso', return_value='2025-01-26'):
+        with patch.object(writer, "_get_today_iso", return_value="2025-01-26"):
             writer.generate_nexus_file(nexus, output_path)
 
         assert output_path.exists()
@@ -279,7 +279,7 @@ This is my custom content.
         )
         output_path = tmp_path / "deep" / "nested" / "path" / "nexus.md"
 
-        with patch.object(writer, '_get_today_iso', return_value='2025-01-26'):
+        with patch.object(writer, "_get_today_iso", return_value="2025-01-26"):
             writer.generate_nexus_file(nexus, output_path)
 
         assert output_path.exists()
@@ -297,7 +297,7 @@ This is my custom content.
             canonical_tag="new",
         )
 
-        with patch.object(writer, '_get_today_iso', return_value='2025-01-26'):
+        with patch.object(writer, "_get_today_iso", return_value="2025-01-26"):
             writer.generate_nexus_file(nexus, output_path)
 
         content = output_path.read_text()
@@ -329,7 +329,7 @@ class TestNexusWriterIntegration:
 
         # Generate file
         output_path = tmp_path / "themes" / filename
-        with patch.object(writer, '_get_today_iso', return_value='2025-01-26'):
+        with patch.object(writer, "_get_today_iso", return_value="2025-01-26"):
             writer.generate_nexus_file(nexus, output_path)
 
         # Verify complete file
@@ -363,7 +363,7 @@ class TestNexusWriterIntegration:
 
         # Generate file
         output_path = tmp_path / "forms" / filename
-        with patch.object(writer, '_get_today_iso', return_value='2025-01-26'):
+        with patch.object(writer, "_get_today_iso", return_value="2025-01-26"):
             writer.generate_nexus_file(nexus, output_path)
 
         content = output_path.read_text()

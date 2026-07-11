@@ -1,18 +1,19 @@
 """Comprehensive tests for configuration management."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 from pydantic import ValidationError
 
 from poetry_mcp.config import (
-    VaultConfig,
-    SearchConfig,
     LoggingConfig,
     PerformanceConfig,
     PoetryMCPConfig,
+    SearchConfig,
+    VaultConfig,
     find_config_file,
-    load_config_from_file,
     get_config,
+    load_config_from_file,
 )
 
 

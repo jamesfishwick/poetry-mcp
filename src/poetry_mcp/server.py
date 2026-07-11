@@ -7,69 +7,98 @@ import asyncio
 import logging
 import re
 import sys
-from typing import Optional, List, Any
+from typing import Any
 
 # Check Python version before any imports
-if sys.version_info < (3, 10):
+if sys.version_info < (3, 10):  # noqa: UP036 - friendly message before import-time syntax errors
     print("Error: Poetry MCP requires Python 3.10 or higher")
     print(f"Current version: {sys.version_info.major}.{sys.version_info.minor}")
     sys.exit(1)
 
 from fastmcp import FastMCP
 
-from .config import load_config
 from .catalog.catalog import Catalog
+from .catalog.nexus_manager import NexusManager
 from .catalog.submission_catalog import SubmissionCatalog
 from .catalog.venue_catalog import VenueCatalog
-from .catalog.nexus_manager import NexusManager
+from .config import load_config
+from .models.nexus import NexusRegistry
 from .models.poem import Poem
-from .models.submission import SubmissionSummary, SubmissionStatus
 from .models.results import (
-    SyncResult,
-    SearchResult,
-    ValidationResult,
-    NexusOperationResult,
     NexusCountsResult,
+    NexusOperationResult,
+    RegenerateVenueResult,
+    SearchResult,
     ServerInfo,
+    SimilarityResult,
+    SubmissionListResult,
+    SubmissionStatusChange,
+    SyncResult,
     SyncSubmissionsResult,
     SyncVenuesResult,
-    VenueDetailResult,
-    RegenerateVenueResult,
-    SubmissionListResult,
-    VenueListResult,
-    SubmissionStatusChange,
     UpdateSubmissionStatusResult,
-    SimilarityResult,
+    ValidationResult,
+    VenueDetailResult,
+    VenueListResult,
 )
-from .models.nexus import NexusRegistry
-from .writers.venue_writer import VenueWriter
-from .utils import slugify_filename
-from .tools.enrichment_tools import (
-    initialize_enrichment_tools,
-    get_all_nexuses as _get_all_nexuses,
-    link_poem_to_nexus as _link_poem_to_nexus,
-    find_nexuses_for_poem as _find_nexuses_for_poem,
-    get_poems_for_enrichment as _get_poems_for_enrichment,
-    sync_nexus_tags as _sync_nexus_tags,
-    move_poem_to_state as _move_poem_to_state,
-    grade_poem_quality as _grade_poem_quality,
+from .models.submission import SubmissionStatus, SubmissionSummary
+from .parsers.nexus_parser import load_nexus_registry
+from .tools.chain_tools import (
+    add_poems_to_chain as _add_poems_to_chain,
+)
+from .tools.chain_tools import (
+    create_chain as _create_chain,
+)
+from .tools.chain_tools import (
+    delete_chain as _delete_chain,
+)
+from .tools.chain_tools import (
+    get_chain as _get_chain,
 )
 from .tools.chain_tools import (
     initialize_chain_tools,
-    create_chain as _create_chain,
-    add_poems_to_chain as _add_poems_to_chain,
-    remove_poems_from_chain as _remove_poems_from_chain,
-    reorder_chain as _reorder_chain,
-    delete_chain as _delete_chain,
-    get_chain as _get_chain,
+)
+from .tools.chain_tools import (
     list_chains as _list_chains,
+)
+from .tools.chain_tools import (
+    remove_poems_from_chain as _remove_poems_from_chain,
+)
+from .tools.chain_tools import (
+    reorder_chain as _reorder_chain,
+)
+from .tools.enrichment_tools import (
+    find_nexuses_for_poem as _find_nexuses_for_poem,
+)
+from .tools.enrichment_tools import (
+    get_all_nexuses as _get_all_nexuses,
+)
+from .tools.enrichment_tools import (
+    get_poems_for_enrichment as _get_poems_for_enrichment,
+)
+from .tools.enrichment_tools import (
+    grade_poem_quality as _grade_poem_quality,
+)
+from .tools.enrichment_tools import (
+    initialize_enrichment_tools,
+)
+from .tools.enrichment_tools import (
+    link_poem_to_nexus as _link_poem_to_nexus,
+)
+from .tools.enrichment_tools import (
+    move_poem_to_state as _move_poem_to_state,
+)
+from .tools.enrichment_tools import (
+    sync_nexus_tags as _sync_nexus_tags,
+)
+from .tools.similarity_tools import (
+    find_similar_poems as _find_similar_poems,
 )
 from .tools.similarity_tools import (
     initialize_similarity_tools,
-    find_similar_poems as _find_similar_poems,
 )
-from .parsers.nexus_parser import load_nexus_registry
-
+from .utils import slugify_filename
+from .writers.venue_writer import VenueWriter
 
 # Configure logging
 logging.basicConfig(
@@ -81,10 +110,10 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("poetry-mcp")
 
 # Global catalog instances
-catalog: Optional[Catalog] = None
-submission_catalog: Optional[SubmissionCatalog] = None
-venue_catalog: Optional[VenueCatalog] = None
-nexus_manager: Optional[NexusManager] = None
+catalog: Catalog | None = None
+submission_catalog: SubmissionCatalog | None = None
+venue_catalog: VenueCatalog | None = None
+nexus_manager: NexusManager | None = None
 
 
 def get_catalog() -> Catalog:
@@ -172,7 +201,7 @@ async def sync_catalog(force_rescan: bool = False) -> SyncResult:
 
 
 @mcp.tool()
-async def get_poem(identifier: str, include_content: bool = True) -> Optional[Poem]:
+async def get_poem(identifier: str, include_content: bool = True) -> Poem | None:
     """
     Get a poem by ID or title.
 
@@ -224,122 +253,124 @@ async def get_server_info() -> ServerInfo:
 @mcp.tool()
 async def query_poems(
     # Text search
-    query: Optional[str] = None,
+    query: str | None = None,
     # Filters
-    states: Optional[List[str]] = None,
-    forms: Optional[List[str]] = None,
-    tags: Optional[List[str]] = None,
+    states: list[str] | None = None,
+    forms: list[str] | None = None,
+    tags: list[str] | None = None,
     tag_match_mode: str = "all",  # "all" or "any"
-    chain_id: Optional[str] = None,  # Filter by chain membership
-    # Quality filters  
-    min_quality_score: Optional[int] = None,
-    quality_dimensions: Optional[List[str]] = None,
+    chain_id: str | None = None,  # Filter by chain membership
+    # Quality filters
+    min_quality_score: int | None = None,
+    quality_dimensions: list[str] | None = None,
     # Sorting
     sort_by: str = "relevance",  # relevance, title, created_at, updated_at, word_count, chain_position
     # Output control
-    limit: Optional[int] = None,
+    limit: int | None = None,
     include_content: bool = False,
 ) -> SearchResult:
     """
     Unified search and query interface for poems.
-    
+
     Replaces: search_poems, find_poems_by_tag, list_poems_by_state,
               get_poems_by_nexus, find_high_scoring_poems
-    
+
     Args:
         query: Text to search in titles, content, notes (optional)
         states: Filter by states (e.g., ["completed", "fledgeling"])
         forms: Filter by forms (e.g., ["free_verse", "prose_poem"])
-        tags: Filter by tags  
+        tags: Filter by tags
         tag_match_mode: "all" (must have all tags) or "any" (at least one tag)
         chain_id: Filter by chain membership (only poems in this chain)
         min_quality_score: Minimum score threshold (0-10) for quality filtering
         quality_dimensions: Quality dimensions to filter on (e.g., ["detail", "mystery"])
-        sort_by: Sort field - "relevance" (default), "title", "created_at", "updated_at", 
+        sort_by: Sort field - "relevance" (default), "title", "created_at", "updated_at",
                  "word_count", "chain_position" (requires chain_id)
         limit: Maximum results (default from config)
         include_content: Include full poem text in results
-    
+
     Returns:
         SearchResult with matched poems and query metadata
-        
+
     Examples:
         ```
         # Text search with state filter
         await query_poems(query="water", states=["completed"])
-        
+
         # Tag search with ANY mode
         await query_poems(tags=["water", "memory"], tag_match_mode="any")
-        
+
         # State list with sorting
         await query_poems(states=["completed"], sort_by="updated_at")
-        
+
         # Quality-based search
         await query_poems(
             quality_dimensions=["detail", "mystery"],
             min_quality_score=8,
             states=["completed"]
         )
-        
+
         # Single nexus lookup (reverse tag lookup)
         await query_poems(tags=["Water-Liquid Imagery"])
-        
+
         # Get poems in a chain, sorted by position
         await query_poems(chain_id="water-sequence", sort_by="chain_position")
         ```
     """
     import time
-    
+
     start_time = time.perf_counter()
     cat = get_catalog()
     config = load_config()
-    
+
     # Use config default for limit
     if limit is None:
         limit = config.search.default_limit
-    
+
     # Start with text search or all poems
     if query:
         results = cat.index.search_content(query, case_sensitive=config.search.case_sensitive)
     else:
         results = cat.index.all_poems.copy()
-    
+
     # Apply state filter
     if states:
         results = [p for p in results if p.state in states]
-    
+
     # Apply form filter
     if forms:
         results = [p for p in results if p.form in forms]
-    
+
     # Apply tag filter with match mode
     if tags:
         if tag_match_mode == "all":
             # Must have all tags
             results = [
-                p for p in results 
+                p
+                for p in results
                 if all(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
             ]
         elif tag_match_mode == "any":
             # Must have at least one tag
             results = [
-                p for p in results
+                p
+                for p in results
                 if any(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
             ]
-    
+
     # Apply chain filter
     if chain_id:
         normalized_chain = chain_id.lower().strip().replace(" ", "-")
         chain_poem_ids = set(cat.index.by_chain.get(normalized_chain, []))
         results = [p for p in results if p.id in chain_poem_ids]
-    
+
     # Apply quality score filter
     if min_quality_score is not None and quality_dimensions:
         filtered_results = []
         for poem in results:
             if not poem.quality or not poem.quality.scores:
                 continue
-                
+
             # Check if poem meets threshold on ALL specified dimensions
             meets_threshold = True
             for dim in quality_dimensions:
@@ -348,12 +379,12 @@ async def query_poems(
                 if score is None or score < min_quality_score:
                     meets_threshold = False
                     break
-            
+
             if meets_threshold:
                 filtered_results.append(poem)
-        
+
         results = filtered_results
-    
+
     # Sort results
     if sort_by == "title":
         results.sort(key=lambda p: p.title.lower())
@@ -366,28 +397,31 @@ async def query_poems(
     elif sort_by == "chain_position" and chain_id:
         # Sort by position in chain (ordered poems first, then loose by title)
         normalized_chain = chain_id.lower().strip().replace(" ", "-")
+
         def chain_sort_key(poem: Poem) -> tuple:
             if poem.chain_positions and normalized_chain in poem.chain_positions:
                 return (0, poem.chain_positions[normalized_chain], "")
             return (1, 0, poem.title.lower())
+
         results.sort(key=chain_sort_key)
     elif sort_by == "relevance" and tags:
         # Sort by tag match relevance
         def relevance_score(poem: Poem) -> int:
             return sum(1 for tag in tags if tag.lower() in [t.lower() for t in poem.tags])
+
         results.sort(key=relevance_score, reverse=True)
     # else: keep original order for relevance without tags
-    
+
     # Limit results
     total_matches = len(results)
     results = results[:limit]
-    
+
     # Remove content if not requested
     if not include_content:
         results = [Poem(**{**p.model_dump(), "content": None}) for p in results]
-    
+
     query_time_ms = (time.perf_counter() - start_time) * 1000
-    
+
     return SearchResult(poems=results, total_matches=total_matches, query_time_ms=query_time_ms)
 
 
@@ -486,7 +520,7 @@ async def find_nexuses_for_poem(
 
 @mcp.tool()
 async def get_poems_for_enrichment(
-    poem_ids: Optional[List[str]] = None,
+    poem_ids: list[str] | None = None,
     max_poems: int = 50,
 ) -> dict:
     """
@@ -585,7 +619,7 @@ async def move_poem_to_state(
 @mcp.tool()
 async def grade_poem_quality(
     poem_id: str,
-    dimensions: Optional[List[str]] = None,
+    dimensions: list[str] | None = None,
 ) -> dict:
     """
     Prepare poem and quality rubric for grading by the MCP agent.
@@ -632,8 +666,8 @@ async def grade_poem_quality(
 def commit_quality_scores_impl(
     poem_id: str,
     scores: dict,
-    notes: Optional[str] = None,
-    catalog: Optional[Any] = None,
+    notes: str | None = None,
+    catalog: Any | None = None,
 ) -> dict:
     """
     Implementation of quality score committing logic.
@@ -676,6 +710,7 @@ def commit_quality_scores_impl(
 
     # Read and update file
     from pathlib import Path
+
     from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
 
     vault_root = Path(cat.vault_root)
@@ -695,6 +730,7 @@ def commit_quality_scores_impl(
 
     # Write back
     import yaml
+
     from poetry_mcp.writers.frontmatter_writer import create_backup
 
     fm_yaml = yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True)
@@ -722,7 +758,7 @@ def commit_quality_scores_impl(
 async def commit_quality_scores(
     poem_id: str,
     scores: dict,
-    notes: Optional[str] = None,
+    notes: str | None = None,
 ) -> dict:
     """
     Write quality scores to poem frontmatter after agent grading.
@@ -767,7 +803,7 @@ async def commit_quality_scores(
 
 def get_quality_scores_impl(
     poem_id: str,
-    catalog: Optional[Any] = None,
+    catalog: Any | None = None,
 ) -> dict:
     """
     Implementation of quality score retrieval logic.
@@ -785,6 +821,7 @@ def get_quality_scores_impl(
 
     # Read quality notes if present
     from pathlib import Path
+
     from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
 
     vault_root = Path(cat.vault_root)
@@ -836,11 +873,11 @@ async def get_quality_scores(
 
 
 def find_high_scoring_poems_impl(
-    qualities: List[str],
+    qualities: list[str],
     min_score: int = 8,
-    states: Optional[List[str]] = None,
+    states: list[str] | None = None,
     limit: int = 20,
-    catalog: Optional[Any] = None,
+    catalog: Any | None = None,
 ) -> dict:
     """
     Implementation of high-scoring poem finding logic.
@@ -1004,10 +1041,10 @@ async def sync_submissions(force_rescan: bool = False) -> SyncSubmissionsResult:
 
 @mcp.tool()
 async def list_submissions(
-    venue: Optional[str] = None,
-    status: Optional[SubmissionStatus] = None,
-    poem: Optional[str] = None,
-    limit: Optional[int] = 50,
+    venue: str | None = None,
+    status: SubmissionStatus | None = None,
+    poem: str | None = None,
+    limit: int | None = 50,
 ) -> SubmissionListResult:
     """
     List submissions with optional filtering.
@@ -1063,9 +1100,9 @@ async def list_submissions(
 @mcp.tool()
 async def update_submission_status(
     new_status: SubmissionStatus,
-    venue: Optional[str] = None,
-    poem: Optional[str] = None,
-    current_status: Optional[SubmissionStatus] = None,
+    venue: str | None = None,
+    poem: str | None = None,
+    current_status: SubmissionStatus | None = None,
     dry_run: bool = True,
 ) -> UpdateSubmissionStatusResult:
     """
@@ -1124,7 +1161,9 @@ async def update_submission_status(
     backups: list[str] = []
 
     from pathlib import Path
+
     import yaml
+
     from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
     from poetry_mcp.writers.frontmatter_writer import create_backup
 
@@ -1254,7 +1293,7 @@ async def sync_venues(force_rescan: bool = False) -> SyncVenuesResult:
     ven_cat = get_venue_catalog()
     result = ven_cat.sync(force_rescan=force_rescan)
     logger.info(f"Venue sync complete: {result['total_venues']} venues")
-    
+
     return SyncVenuesResult(
         success=True,
         total_venues=result["total_venues"],
@@ -1266,8 +1305,8 @@ async def sync_venues(force_rescan: bool = False) -> SyncVenuesResult:
 
 @mcp.tool()
 async def list_venues(
-    payment_filter: Optional[str] = None,
-    simultaneous_filter: Optional[bool] = None,
+    payment_filter: str | None = None,
+    simultaneous_filter: bool | None = None,
 ) -> VenueListResult:
     """
     List all venues with optional filtering.
@@ -1419,6 +1458,7 @@ async def regenerate_venue_file(venue_name: str) -> RegenerateVenueResult:
 # Nexus Management Tools
 # ============================================================================
 
+
 @mcp.tool()
 async def refresh_nexus_poem_counts() -> NexusCountsResult:
     """
@@ -1471,12 +1511,14 @@ async def refresh_nexus_poem_counts() -> NexusCountsResult:
             stats[category_name]["count"] += 1
             stats[category_name]["total_poems"] += len(poems)
 
-            all_nexuses_with_counts.append({
-                "name": nexus.name,
-                "category": nexus.category,
-                "canonical_tag": nexus.canonical_tag,
-                "poem_count": nexus.poem_count,
-            })
+            all_nexuses_with_counts.append(
+                {
+                    "name": nexus.name,
+                    "category": nexus.category,
+                    "canonical_tag": nexus.canonical_tag,
+                    "poem_count": nexus.poem_count,
+                }
+            )
 
     # Sort to find top nexuses
     all_nexuses_with_counts.sort(key=lambda n: n["poem_count"], reverse=True)
@@ -1569,12 +1611,14 @@ async def validate_poem_tags() -> ValidationResult:
 
             # If poem has invalid tags, record it
             if invalid_tags_in_poem:
-                poems_with_invalid.append({
-                    "id": poem.id,
-                    "title": poem.title,
-                    "invalid_tags": invalid_tags_in_poem,
-                    "file_path": str(poem.file_path),
-                })
+                poems_with_invalid.append(
+                    {
+                        "id": poem.id,
+                        "title": poem.title,
+                        "invalid_tags": invalid_tags_in_poem,
+                        "file_path": str(poem.file_path),
+                    }
+                )
 
     # Find all unique invalid tags
     invalid_tags = sorted(all_tags_checked - valid_tags)
@@ -1583,9 +1627,13 @@ async def validate_poem_tags() -> ValidationResult:
     is_valid = len(invalid_tags) == 0
 
     if is_valid:
-        logger.info(f"✅ Tag validation passed: {total_poems_checked} poems, {len(all_tags_checked)} tags, all valid")
+        logger.info(
+            f"✅ Tag validation passed: {total_poems_checked} poems, {len(all_tags_checked)} tags, all valid"
+        )
     else:
-        logger.warning(f"❌ Tag validation failed: {len(invalid_tags)} invalid tags across {len(poems_with_invalid)} poems")
+        logger.warning(
+            f"❌ Tag validation failed: {len(invalid_tags)} invalid tags across {len(poems_with_invalid)} poems"
+        )
 
     return ValidationResult(
         success=is_valid,
@@ -1605,7 +1653,7 @@ async def create_nexus(
     category: str,
     canonical_tag: str,
     description: str,
-    custom_template: Optional[str] = None,
+    custom_template: str | None = None,
 ) -> NexusOperationResult:
     """
     Create a new nexus (theme, motif, or form).
@@ -1805,9 +1853,7 @@ async def delete_nexus(
 
             # Resync catalog after tag removals
             cat.sync(force_rescan=True)
-            logger.info(
-                f"Catalog resynced: {poems_cleaned} cleaned, {len(cleanup_errors)} failed"
-            )
+            logger.info(f"Catalog resynced: {poems_cleaned} cleaned, {len(cleanup_errors)} failed")
 
         # Delete the nexus file
         manager = get_nexus_manager()
@@ -1896,7 +1942,7 @@ async def create_chain(
 async def add_poems_to_chain(
     chain_id: str,
     poem_ids: list[str],
-    positions: Optional[List[int]] = None,
+    positions: list[int] | None = None,
 ) -> dict:
     """
     Add poems to an existing chain.
@@ -2104,7 +2150,7 @@ async def find_similar_poems(
     )
 
 
-def _run_startup_tag_validation() -> Optional[ValidationResult]:
+def _run_startup_tag_validation() -> ValidationResult | None:
     """Run tag validation once at startup, if enabled in config.
 
     Returns the ValidationResult, or None when validation is disabled or an

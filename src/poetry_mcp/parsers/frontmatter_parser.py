@@ -5,14 +5,13 @@ This is the core of the v2.0 architecture: data comes from frontmatter, not BASE
 """
 
 import re
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
+
 import yaml
 
-from ..models.poem import Poem
 from ..errors import FrontmatterParseError
-
+from ..models.poem import Poem
 
 # Canonical mapping from a poem's top-level catalog subfolder to its state.
 # Folder is authoritative; this is the single source of truth for that mapping
@@ -33,7 +32,7 @@ DEFAULT_FOLDER_STATE_MAP: dict[str, str] = {
 def parse_poem_file(
     file_path: Path,
     vault_root: Path,
-    folder_state_map: Optional[dict[str, str]] = None,
+    folder_state_map: dict[str, str] | None = None,
 ) -> Poem:
     """
     Parse a poem markdown file into a Poem object.
@@ -235,8 +234,8 @@ def extract_title(content: str, file_path: Path) -> str:
 def derive_state_from_path(
     file_path: Path,
     vault_root: Path,
-    folder_state_map: Optional[dict[str, str]] = None,
-) -> Optional[str]:
+    folder_state_map: dict[str, str] | None = None,
+) -> str | None:
     """
     Derive poem state from its top-level catalog subfolder (authoritative).
 
@@ -419,7 +418,7 @@ def count_lines(content: str) -> int:
     return len(lines)
 
 
-def count_stanzas(content: str) -> Optional[int]:
+def count_stanzas(content: str) -> int | None:
     """
     Count stanzas (blank-line separated groups) in poem content.
 

@@ -5,14 +5,13 @@ Scans venues/ directory and provides indexed access to venue metadata.
 Venue metadata is stored in frontmatter of venue markdown files.
 """
 
-import time
 import logging
+import time
 from pathlib import Path
-from typing import Optional
 
+from poetry_mcp.errors import BaseParseError as ParseError
 from poetry_mcp.models.venue import Venue
 from poetry_mcp.parsers.venue_parser import VenueParser
-from poetry_mcp.errors import BaseParseError as ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ class VenueIndex:
         self.by_name.clear()
         self.by_file.clear()
 
-    def get_by_name(self, name: str) -> Optional[Venue]:
+    def get_by_name(self, name: str) -> Venue | None:
         """Get venue by name (case-insensitive)."""
         return self.by_name.get(name.lower())
 
@@ -66,7 +65,7 @@ class VenueCatalog:
         self.venues_dir = Path(venues_dir)
         self.parser = VenueParser()
         self.index = VenueIndex()
-        self._last_scan_time: Optional[float] = None
+        self._last_scan_time: float | None = None
 
     def sync(self, force_rescan: bool = False) -> dict:
         """
@@ -130,7 +129,7 @@ class VenueCatalog:
             "duration_seconds": duration,
         }
 
-    def get_by_name(self, name: str) -> Optional[Venue]:
+    def get_by_name(self, name: str) -> Venue | None:
         """Get venue by name (case-insensitive)."""
         return self.index.get_by_name(name)
 
@@ -140,8 +139,8 @@ class VenueCatalog:
 
     def filter_venues(
         self,
-        payment_filter: Optional[str] = None,
-        simultaneous_filter: Optional[bool] = None,
+        payment_filter: str | None = None,
+        simultaneous_filter: bool | None = None,
     ) -> list[Venue]:
         """
         Filter venues by criteria.

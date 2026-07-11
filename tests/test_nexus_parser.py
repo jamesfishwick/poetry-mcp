@@ -2,13 +2,13 @@
 
 import pytest
 
+from poetry_mcp.errors import FrontmatterParseError
 from poetry_mcp.parsers.nexus_parser import (
     extract_canonical_tag,
+    load_nexus_registry,
     parse_nexus_file,
     scan_nexus_directory,
-    load_nexus_registry,
 )
-from poetry_mcp.errors import FrontmatterParseError
 
 
 class TestExtractCanonicalTag:

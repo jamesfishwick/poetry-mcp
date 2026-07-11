@@ -5,8 +5,7 @@ Represents metadata about a publication venue (journal, magazine, press).
 This is relatively static information about the venue itself.
 """
 
-from typing import Optional
-from pydantic import BaseModel, HttpUrl, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class Venue(BaseModel):
@@ -23,25 +22,25 @@ class Venue(BaseModel):
         examples=["Palette Poetry", "Rattle", "The Georgia Review"],
     )
 
-    payment: Optional[str | bool] = Field(
+    payment: str | bool | None = Field(
         None,
         description="Payment information: specific amount, 'yes', 'no', boolean, or 'unknown'",
         examples=["$50/poem", "$50 + 2 copies", "yes", "no", True, False, "unknown"],
     )
 
-    response_time_days: Optional[int | str] = Field(
+    response_time_days: int | str | None = Field(
         None,
         description="Expected response time in days, or 'unknown'/'check'",
         examples=[30, 90, 180, "unknown", "check"],
     )
 
-    simultaneous: Optional[str | bool] = Field(
+    simultaneous: str | bool | None = Field(
         None,
         description="Accepts simultaneous submissions: yes/no/check",
         examples=["yes", "no", "check", True, False],
     )
 
-    aesthetic: Optional[str] = Field(
+    aesthetic: str | None = Field(
         None,
         description="Editorial focus, aesthetic preferences, themes",
         examples=[
@@ -51,9 +50,9 @@ class Venue(BaseModel):
         ],
     )
 
-    url: Optional[HttpUrl] = Field(None, description="Venue website URL")
+    url: HttpUrl | None = Field(None, description="Venue website URL")
 
-    submission_format: Optional[str] = Field(
+    submission_format: str | None = Field(
         None,
         description="Technical submission requirements",
         examples=[
@@ -63,14 +62,14 @@ class Venue(BaseModel):
         ],
     )
 
-    submission_frequency: Optional[str] = Field(
+    submission_frequency: str | None = Field(
         None,
         description="Submission window schedule",
         examples=["Quarterly (solstice/equinox)", "Year-round", "September 1 - November 30"],
     )
 
     # File location for roundtrip editing
-    file_path: Optional[str] = Field(None, description="Path to the venue's markdown file")
+    file_path: str | None = Field(None, description="Path to the venue's markdown file")
 
     model_config = ConfigDict(
         json_schema_extra={

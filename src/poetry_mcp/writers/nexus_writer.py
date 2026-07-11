@@ -4,9 +4,10 @@ Nexus file writer.
 Generates nexus markdown files for themes, motifs, and forms.
 """
 
-import yaml
 from pathlib import Path
 from typing import Literal
+
+import yaml
 
 from poetry_mcp.models.nexus import Nexus
 
@@ -107,9 +108,7 @@ Created: {self._get_today_iso()}
 
         return date.today().isoformat()
 
-    def get_nexus_filename(
-        self, name: str, category: Literal["theme", "motif", "form"]
-    ) -> str:
+    def get_nexus_filename(self, name: str, category: Literal["theme", "motif", "form"]) -> str:
         """
         Generate canonical filename for a nexus.
 

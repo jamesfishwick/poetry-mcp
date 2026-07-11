@@ -1,11 +1,12 @@
 """Tests for catalog functionality."""
 
-import pytest
 from datetime import datetime
 
-from poetry_mcp.catalog.catalog import CatalogIndex, Catalog
+import pytest
+
+from poetry_mcp.catalog.catalog import Catalog, CatalogIndex
 from poetry_mcp.models.poem import Poem
-from poetry_mcp.models.results import SyncResult, CatalogStats
+from poetry_mcp.models.results import CatalogStats, SyncResult
 
 
 class TestCatalogIndex:

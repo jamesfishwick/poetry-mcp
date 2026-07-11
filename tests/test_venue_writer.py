@@ -157,10 +157,37 @@ class TestGenerateSubmissionTables:
         """Test generating tables with submissions in all status groups."""
         submissions = [
             Submission(venue_name="Test", poems=["A"], status="planned", due_date="2025-12-01"),
-            Submission(venue_name="Test", poems=["B"], status="submitted", submitted=True, submitted_date="2025-10-01"),
-            Submission(venue_name="Test", poems=["C"], status="accepted", submitted=True, submitted_date="2025-09-01", response_date="2025-11-01"),
-            Submission(venue_name="Test", poems=["D"], status="rejected", submitted=True, submitted_date="2025-08-01", response_date="2025-10-01"),
-            Submission(venue_name="Test", poems=["E"], status="withdrawn", submitted=True, submitted_date="2025-07-01", response_date="2025-07-15"),
+            Submission(
+                venue_name="Test",
+                poems=["B"],
+                status="submitted",
+                submitted=True,
+                submitted_date="2025-10-01",
+            ),
+            Submission(
+                venue_name="Test",
+                poems=["C"],
+                status="accepted",
+                submitted=True,
+                submitted_date="2025-09-01",
+                response_date="2025-11-01",
+            ),
+            Submission(
+                venue_name="Test",
+                poems=["D"],
+                status="rejected",
+                submitted=True,
+                submitted_date="2025-08-01",
+                response_date="2025-10-01",
+            ),
+            Submission(
+                venue_name="Test",
+                poems=["E"],
+                status="withdrawn",
+                submitted=True,
+                submitted_date="2025-07-01",
+                response_date="2025-07-15",
+            ),
         ]
 
         tables = writer._generate_submission_tables(submissions)
@@ -408,7 +435,9 @@ They span multiple lines.
         assert "My custom notes about this venue." in notes
         assert "They span multiple lines." in notes
 
-    def test_extract_notes_default_message_returns_none(self, writer: VenueWriter, tmp_path: Path) -> None:
+    def test_extract_notes_default_message_returns_none(
+        self, writer: VenueWriter, tmp_path: Path
+    ) -> None:
         """Test that default notes message returns None."""
         file_content = """---
 name: Test Venue
@@ -502,7 +531,9 @@ class TestGenerateVenueFile:
 
         venue = Venue(name="Updated Venue")
         submissions = [
-            Submission(venue_name="Updated Venue", poems=["New Poem"], status="submitted", submitted=True),
+            Submission(
+                venue_name="Updated Venue", poems=["New Poem"], status="submitted", submitted=True
+            ),
         ]
 
         writer.generate_venue_file(venue, submissions, output_path)
