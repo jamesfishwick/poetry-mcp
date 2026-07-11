@@ -291,7 +291,7 @@ def create_default_config(vault_path: Path, config_path: Optional[Path] = None) 
             "exclude_catalog_dirs": [],
             "custom_states": [],
         },
-        "search": {"default_limit": 20, "case_sensitive": False},
+        "search": {"default_limit": 50, "case_sensitive": False},
         "logging": {
             "level": "INFO",
             "file": None,
