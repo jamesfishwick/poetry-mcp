@@ -43,6 +43,7 @@ from .models.results import (
 )
 from .models.nexus import NexusRegistry
 from .writers.venue_writer import VenueWriter
+from .utils import slugify_filename
 from .tools.enrichment_tools import (
     initialize_enrichment_tools,
     get_all_nexuses as _get_all_nexuses,
@@ -983,7 +984,7 @@ async def sync_submissions(force_rescan: bool = False) -> SyncSubmissionsResult:
         venue = ven_cat.get_by_name(venue_name)
         if venue:
             submissions = sub_cat.get_by_venue(venue_name)
-            output_path = venues_dir / f"{venue_name}.md"
+            output_path = venues_dir / f"{slugify_filename(venue_name)}.md"
 
             writer = VenueWriter()
             writer.generate_venue_file(venue, submissions, output_path)
@@ -1399,7 +1400,7 @@ async def regenerate_venue_file(venue_name: str) -> RegenerateVenueResult:
 
     # Generate file
     venues_dir = config.vault.path / config.vault.venues_dir
-    output_path = venues_dir / f"{venue_name}.md"
+    output_path = venues_dir / f"{slugify_filename(venue_name)}.md"
 
     writer = VenueWriter()
     writer.generate_venue_file(venue, submissions, output_path)
