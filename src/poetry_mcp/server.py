@@ -39,6 +39,7 @@ from .models.results import (
     VenueListResult,
     SubmissionStatusChange,
     UpdateSubmissionStatusResult,
+    SimilarityResult,
 )
 from .models.nexus import NexusRegistry
 from .writers.venue_writer import VenueWriter
@@ -62,6 +63,11 @@ from .tools.chain_tools import (
     get_chain as _get_chain,
     list_chains as _list_chains,
 )
+from .tools.similarity_tools import (
+    initialize_similarity_tools,
+    find_similar_poems as _find_similar_poems,
+)
+from .parsers.nexus_parser import load_nexus_registry
 
 
 # Configure logging
@@ -1663,6 +1669,7 @@ async def create_nexus(
         # Refresh nexus registry to include new nexus
         cat = get_catalog()
         initialize_enrichment_tools(cat)
+        initialize_similarity_tools(cat, load_nexus_registry(load_config().vault.path))
         logger.info("Nexus registry refreshed")
 
         return NexusOperationResult(
@@ -1804,6 +1811,7 @@ async def delete_nexus(
 
         # Refresh nexus registry to remove deleted nexus
         initialize_enrichment_tools(cat)
+        initialize_similarity_tools(cat, load_nexus_registry(load_config().vault.path))
         logger.info("Nexus registry refreshed")
 
         return NexusOperationResult(
@@ -2050,6 +2058,40 @@ async def list_chains() -> dict:
     return await _list_chains()
 
 
+# =============================================================================
+# SIMILARITY TOOLS - Find poems related through metadata connections
+# =============================================================================
+
+
+@mcp.tool()
+async def find_similar_poems(
+    poem_id: str,
+    limit: int = 10,
+    include_content: bool = False,
+) -> SimilarityResult:
+    """Find poems similar to a given poem through metadata connections.
+
+    Scores candidates by four signals (ordered by strength):
+    1. Shared nexus membership (canonical_tags) -- weight 3.0
+    2. Shared chain co-membership -- weight 2.0
+    3. Shared plain tags (non-nexus) -- weight 1.0
+    4. Same form -- weight 0.5
+
+    Args:
+        poem_id: Poem identifier (ID or title)
+        limit: Maximum number of similar poems to return (default 10)
+        include_content: Whether to include full poem text in results
+
+    Returns:
+        SimilarityResult with ranked matches and similarity metadata
+    """
+    return await _find_similar_poems(
+        poem_id=poem_id,
+        limit=limit,
+        include_content=include_content,
+    )
+
+
 def _run_startup_tag_validation() -> Optional[ValidationResult]:
     """Run tag validation once at startup, if enabled in config.
 
@@ -2110,6 +2152,7 @@ def main() -> None:
     logger.info("Initializing enrichment tools...")
     try:
         initialize_enrichment_tools(cat)
+        initialize_similarity_tools(cat, load_nexus_registry(load_config().vault.path))
         logger.info("Enrichment tools initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize enrichment tools: {e}")

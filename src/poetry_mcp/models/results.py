@@ -419,3 +419,45 @@ class UpdateSubmissionStatusResult(BaseModel):
     )
     filters_applied: dict = Field(..., description="Selection filters used")
     error: Optional[str] = Field(None, description="Error message if the operation failed")
+
+
+class SimilarPoemMatch(BaseModel):
+    """A poem matched as similar to a reference poem, with explanation."""
+
+    poem: Poem = Field(..., description="The similar poem")
+    similarity_score: float = Field(
+        ..., description="Weighted similarity score (higher = more similar)"
+    )
+    shared_nexuses: List[str] = Field(
+        default_factory=list,
+        description="Nexus canonical_tags shared with source poem",
+    )
+    shared_tags: List[str] = Field(
+        default_factory=list,
+        description="Non-nexus tags shared with source poem",
+    )
+    shared_chains: List[str] = Field(
+        default_factory=list,
+        description="Chain IDs both poems belong to",
+    )
+    same_form: bool = Field(
+        default=False,
+        description="Whether the poem has the same form as the source",
+    )
+
+
+class SimilarityResult(BaseModel):
+    """Result from find_similar_poems operation."""
+
+    success: bool = Field(..., description="Whether the operation succeeded")
+    source_poem_id: str = Field(..., description="ID of the reference poem")
+    source_poem_title: str = Field(..., description="Title of the reference poem")
+    matches: List[SimilarPoemMatch] = Field(
+        default_factory=list,
+        description="Similar poems ranked by score (highest first)",
+    )
+    total_candidates_scored: int = Field(
+        ..., description="Number of candidate poems evaluated"
+    )
+    query_time_ms: float = Field(..., description="Time taken in milliseconds")
+    error: Optional[str] = Field(None, description="Error message if operation failed")
