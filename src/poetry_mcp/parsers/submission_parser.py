@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from poetry_mcp.models.submission import Submission
 from poetry_mcp.errors import BaseParseError as ParseError
+from poetry_mcp.utils import slugify_filename
 
 
 class SubmissionParser:
@@ -244,13 +245,8 @@ class SubmissionParser:
         else:
             date_str = "XXXX-XX-XX"
 
-        # Poem component (use first poem title)
-        poem_title = poems[0] if poems else "Untitled"
-        poem_slug = re.sub(r"[^\w\s-]", "", poem_title)
-        poem_slug = re.sub(r"[-\s]+", "-", poem_slug).strip("-")
-
-        # Venue component
-        venue_slug = re.sub(r"[^\w\s-]", "", venue_name)
-        venue_slug = re.sub(r"[-\s]+", "-", venue_slug).strip("-")
+        # Poem + venue components (shared slugify guards against bad filenames)
+        poem_slug = slugify_filename(poems[0] if poems else "Untitled")
+        venue_slug = slugify_filename(venue_name)
 
         return f"{date_str}_{poem_slug}_{venue_slug}.md"
