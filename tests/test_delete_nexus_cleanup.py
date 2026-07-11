@@ -51,6 +51,9 @@ def test_delete_nexus_cleanup_removes_tag_and_counts(tmp_path):
         patch.object(server_module, "_get_all_nexuses", AsyncMock(return_value=registry)),
         patch.object(server_module, "get_nexus_manager", return_value=manager),
         patch.object(server_module, "initialize_enrichment_tools"),
+        patch.object(server_module, "initialize_similarity_tools"),
+        patch.object(server_module, "load_nexus_registry"),
+        patch.object(server_module, "load_config"),
     ):
         result = asyncio.run(
             server_module.delete_nexus.fn(
@@ -91,6 +94,9 @@ def test_delete_nexus_cleanup_surfaces_partial_failures(tmp_path):
         patch.object(server_module, "_get_all_nexuses", AsyncMock(return_value=registry)),
         patch.object(server_module, "get_nexus_manager", return_value=manager),
         patch.object(server_module, "initialize_enrichment_tools"),
+        patch.object(server_module, "initialize_similarity_tools"),
+        patch.object(server_module, "load_nexus_registry"),
+        patch.object(server_module, "load_config"),
     ):
         result = asyncio.run(
             server_module.delete_nexus.fn(
