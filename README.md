@@ -172,21 +172,21 @@ See [TEST_STATUS.md](TEST_STATUS.md) for detailed test suite information.
 git clone <repository-url>
 cd poetry-mcp
 
-# Install with dev dependencies
-pip install -e ".[dev]"
+# Install with dev dependencies (uv installs the dev dependency group)
+uv sync
 ```
 
 ### Running Tests
 
 ```bash
 # Run all tests
-pytest tests/
+uv run pytest
 
-# Run with coverage
-pytest tests/ --cov=poetry_mcp --cov-report=html
+# Run with coverage (configured by default)
+uv run pytest --cov-report=html
 
 # Run specific test file
-pytest tests/test_models.py -v
+uv run pytest tests/test_models.py -v
 ```
 
 ### Code Quality
