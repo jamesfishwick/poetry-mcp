@@ -23,15 +23,12 @@ from .catalog.submission_catalog import SubmissionCatalog
 from .catalog.venue_catalog import VenueCatalog
 from .catalog.nexus_manager import NexusManager
 from .models.poem import Poem
-from .models.submission import Submission, SubmissionSummary, SubmissionStatus
-from .models.venue import Venue
+from .models.submission import SubmissionSummary, SubmissionStatus
 from .models.results import (
     SyncResult,
     SearchResult,
-    CatalogStats,
     ValidationResult,
     NexusOperationResult,
-    PoemsByNexusResult,
     NexusCountsResult,
     ServerInfo,
     SyncSubmissionsResult,
@@ -697,7 +694,7 @@ def commit_quality_scores_impl(
     new_content = f"---\n{fm_yaml}---\n{body}"
 
     # Create backup and write new content
-    backup_path = create_backup(file_path)
+    create_backup(file_path)
     file_path.write_text(new_content, encoding="utf-8")
 
     # Resync catalog

@@ -9,7 +9,6 @@ import time
 import logging
 from pathlib import Path
 from typing import Optional
-from collections import defaultdict
 
 from poetry_mcp.models.venue import Venue
 from poetry_mcp.parsers.venue_parser import VenueParser
