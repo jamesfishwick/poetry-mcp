@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server for managing poetry catalogs, nexuses, and submissions.
 
-**Status:** Production Ready - 24 tools implemented, 343 tests passing (65% coverage), all core features operational
+**Status:** Production Ready - 25 tools implemented, 343 tests passing (65% coverage), all core features operational
 
 ## Overview
 
@@ -30,12 +30,14 @@ form: american-sentence          # ✅ Structural metadata → dedicated field
 ```
 
 **No free-text tags allowed.** Use dedicated fields for workflow metadata:
+
 - Workflow states → `status: fledgeling`
 - Submission tracking → `submitted: true` (use submission files)
 - Quality → `quality: {detail: 8, mystery: 9}`
 - Notes → Use poem body or separate notes field
 
 **Validation:**
+
 - Manual: Use `validate_poem_tags()` to check compliance anytime
 - Automatic: Tag validation runs once on server startup by default
 - Configure: Set `validation.auto_validate_on_sync: false` in config.yaml to disable
@@ -44,11 +46,11 @@ form: american-sentence          # ✅ Structural metadata → dedicated field
 
 Poetry MCP uses three complementary ways to evaluate poems:
 
-| Type | What It Measures | Example |
-|------|-----------------|---------|
-| **Nexus** (binary) | What does this poem **contain**? | Contains water imagery (yes/no) |
-| **Quality** (scalar) | What does this poem **achieve**? | Scores 8/10 on "Surprise" |
-| **Influence** (lineage) | Where does this poem **come from**? | Descended from William Bronk |
+| Type                    | What It Measures                    | Example                         |
+| ----------------------- | ----------------------------------- | ------------------------------- |
+| **Nexus** (binary)      | What does this poem **contain**?    | Contains water imagery (yes/no) |
+| **Quality** (scalar)    | What does this poem **achieve**?    | Scores 8/10 on "Surprise"       |
+| **Influence** (lineage) | Where does this poem **come from**? | Descended from William Bronk    |
 
 **8 Universal Quality Dimensions:** Detail, Life, Music, Mystery, Sufficient Thought, Surprise, Syntax, Unity. The MCP server provides `grade_poem_quality()` which returns poem content and quality rubrics for agent-based scoring (0-10 scale with reasoning).
 
@@ -254,17 +256,17 @@ Poetry MCP supports multiple configuration methods with automatic fallback:
 ### Configuration Priority (highest to lowest)
 
 1. **YAML config file** - Most flexible, supports all options
-2. **Environment variables** - Quick setup for vault path
-3. **Interactive setup** - First-run wizard (when run in terminal)
-4. **Default location** - `~/.local/share/obsidian/art/Poetry` (if exists)
+1. **Environment variables** - Quick setup for vault path
+1. **Interactive setup** - First-run wizard (when run in terminal)
+1. **Default location** - `~/.local/share/obsidian/art/Poetry` (if exists)
 
 ### Config File Locations
 
 Poetry MCP checks these locations in order:
 
 1. `$POETRY_MCP_CONFIG` - Environment variable pointing to config file
-2. `~/.config/poetry-mcp/config.yaml` - XDG config directory (recommended)
-3. `~/.poetry-mcp/config.yaml` - Home directory fallback
+1. `~/.config/poetry-mcp/config.yaml` - XDG config directory (recommended)
+1. `~/.poetry-mcp/config.yaml` - Home directory fallback
 
 ### Full Config File Example
 
@@ -392,10 +394,10 @@ If you have the package installed globally:
 After configuring your MCP client:
 
 1. Restart the client application
-2. Start a new conversation/session
-3. Check that poetry-mcp tools are available
-4. Try: "What poetry tools are available?"
-5. Try: "Get catalog stats" - should show your poem count
+1. Start a new conversation/session
+1. Check that poetry-mcp tools are available
+1. Try: "What poetry tools are available?"
+1. Try: "Get catalog stats" - should show your poem count
 
 ### Troubleshooting
 
@@ -510,10 +512,11 @@ print(f"Moved to: {result['new_path']}")
 
 - **get_all_nexuses** - Browse available themes, motifs, and forms
 - **link_poem_to_nexus** - Add nexus tags to poem frontmatter
-- **sync_nexus_tags** - Sync [[Nexus]] wikilinks with frontmatter tags
+- **sync_nexus_tags** - Sync \[[Nexus]\] wikilinks with frontmatter tags
 - **move_poem_to_state** - Move poems between state directories
 
 **Nexus Management:**
+
 - **create_nexus** - Create new themes, motifs, or forms
 - **delete_nexus** - Remove themes, motifs, or forms (with optional cleanup)
 - **refresh_nexus_poem_counts** - Populate poem_count for all nexuses
@@ -521,7 +524,7 @@ print(f"Moved to: {result['new_path']}")
 
 ### Agent Analysis Tools
 
-*These tools return data for YOUR (the agent's) analysis*
+_These tools return data for YOUR (the agent's) analysis_
 
 - **find_nexuses_for_poem** - Get poem + themes for agent to analyze and suggest matches
 - **get_poems_for_enrichment** - Get batch of poems for agent to analyze and suggest themes
@@ -529,21 +532,24 @@ print(f"Moved to: {result['new_path']}")
 
 ### Quality Scoring Tools
 
-*Manage quality scores on poems across 8 universal dimensions*
+_Manage quality scores on poems across 8 universal dimensions_
 
 - **commit_quality_scores** - Write quality scores to poem frontmatter with validation
 - **get_quality_scores** - Retrieve existing quality scores from a poem
 
 ### Submission & Venue Management
 
-*Track submissions to literary venues with auto-generated venue views*
+_Track submissions to literary venues with auto-generated venue views_
 
 **Submission Tools:**
+
 - **sync_submissions** - Scan submissions/ directory and build index
 - **list_submissions** - Query submissions by venue, status, or poem (with filters)
+- **update_submission_status** - Bulk-change status by venue/poem/current status (previews by default, backs up each file)
 - **get_submission_stats** - Get submission statistics and acceptance rate
 
 **Venue Tools:**
+
 - **sync_venues** - Scan venues/ directory and load metadata
 - **list_venues** - Browse venues with payment and simultaneous filters
 - **get_venue** - Get venue metadata with all submissions
@@ -572,7 +578,7 @@ print(f"Moved to: {result['new_path']}")
 ### Current Status
 
 - **Test Coverage:** 85% (343 tests, 100% pass rate)
-- **Implemented Tools:** 24 MCP tools across all categories
+- **Implemented Tools:** 25 MCP tools across all categories
 - **Production Ready:** Core functionality operational
 
 ### Future Enhancements (v2+)
@@ -639,10 +645,10 @@ performance:
 **When you edit in Obsidian:**
 
 1. Save changes → File watcher detects change
-2. Waits 2 seconds (Obsidian may save multiple files)
-3. Reloads changed markdown files
-4. Updates Pydantic models in memory
-5. Changes visible in next Claude query
+1. Waits 2 seconds (Obsidian may save multiple files)
+1. Reloads changed markdown files
+1. Updates Pydantic models in memory
+1. Changes visible in next Claude query
 
 #### Why Not in v1?
 
