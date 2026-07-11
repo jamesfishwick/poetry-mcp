@@ -5,14 +5,26 @@ Handles creation, deletion, and management of nexuses (themes, motifs, forms).
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Literal
 
 from poetry_mcp.models.nexus import Nexus
 from poetry_mcp.writers.nexus_writer import NexusWriter
+from poetry_mcp.writers.frontmatter_writer import (
+    extract_frontmatter_and_content,
+    serialize_frontmatter_and_content,
+)
 from poetry_mcp.errors import BaseParseError as ParseError
 
 logger = logging.getLogger(__name__)
+
+# The description lives in the body's "## Overview" section (see NexusWriter's
+# default template), not the frontmatter. This captures that section's text so
+# update_nexus can replace it in place without regenerating the whole body.
+_OVERVIEW_RE = re.compile(
+    r"(?P<head>##\s+Overview\s*\n\n)(?P<body>.*?)(?P<tail>\n\n##|\Z)", re.DOTALL
+)
 
 
 class NexusManager:
@@ -83,8 +95,8 @@ class NexusManager:
             self.writer.generate_nexus_file(nexus, file_path, custom_template)
             logger.info(f"Created nexus: {file_path}")
             return nexus
-        except Exception as e:
-            raise ParseError(f"Failed to create nexus file: {e}")
+        except OSError as e:
+            raise ParseError(f"Failed to create nexus file: {e}") from e
 
     def delete_nexus(
         self,
@@ -134,8 +146,8 @@ class NexusManager:
                 "category": category,
                 "status": "success",
             }
-        except Exception as e:
-            raise ParseError(f"Failed to delete nexus file: {e}")
+        except OSError as e:
+            raise ParseError(f"Failed to delete nexus file: {e}") from e
 
     def update_nexus(
         self,
@@ -160,8 +172,9 @@ class NexusManager:
             ParseError: If nexus not found or update fails
 
         Note:
-            Currently only supports updating frontmatter (canonical_tag).
-            Description updates require manual editing of the markdown content.
+            canonical_tag is a frontmatter field; description is the body's
+            "## Overview" section. Both are updated in place, preserving the
+            rest of the file. Unspecified fields keep their current values.
         """
         # Determine category directory
         category_dir = self.nexus_root / f"{category}s"
@@ -171,33 +184,43 @@ class NexusManager:
         if not file_path.exists():
             raise ParseError(f"Nexus not found: {file_path}")
 
-        # Read current file
+        # Parse frontmatter + body properly (no fragile string surgery).
         content = file_path.read_text(encoding="utf-8")
+        frontmatter, body = extract_frontmatter_and_content(content, file_path)
 
-        # Update canonical_tag in frontmatter if provided
         if new_canonical_tag:
-            # Simple replace - in production you'd parse YAML properly.
-            # Extract the current tag first: a backslash escape ('\n') inside an
-            # f-string expression is a SyntaxError on Python < 3.12.
-            current_canonical_tag = content.split("canonical_tag: ")[1].split("\n")[0]
-            content = content.replace(
-                f"canonical_tag: {current_canonical_tag}",
-                f"canonical_tag: {new_canonical_tag}",
-                1,
-            )
+            frontmatter["canonical_tag"] = new_canonical_tag
+        effective_tag = frontmatter.get("canonical_tag", "")
 
-        # Write updated content
+        if new_description is not None:
+            if _OVERVIEW_RE.search(body):
+                body = _OVERVIEW_RE.sub(
+                    lambda m: f"{m.group('head')}{new_description}{m.group('tail')}",
+                    body,
+                    count=1,
+                )
+                effective_description = new_description
+            else:
+                # Don't silently drop the update — surface that it had no home.
+                logger.warning(
+                    f"No '## Overview' section in {file_path}; "
+                    f"description not written to the body"
+                )
+                effective_description = new_description
+        else:
+            match = _OVERVIEW_RE.search(body)
+            effective_description = match.group("body").strip() if match else ""
+
         try:
-            file_path.write_text(content, encoding="utf-8")
+            new_content = serialize_frontmatter_and_content(frontmatter, body)
+            file_path.write_text(new_content, encoding="utf-8")
             logger.info(f"Updated nexus: {file_path}")
-
-            # Return updated Nexus
             return Nexus(
                 name=name,
                 category=category,
-                canonical_tag=new_canonical_tag or "updated",
-                description=new_description or "See file for details",
+                canonical_tag=effective_tag,
+                description=effective_description,
                 file_path=str(file_path),
             )
-        except Exception as e:
-            raise ParseError(f"Failed to update nexus file: {e}")
+        except OSError as e:
+            raise ParseError(f"Failed to update nexus file: {e}") from e
