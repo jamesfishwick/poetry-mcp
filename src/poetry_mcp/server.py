@@ -2088,18 +2088,20 @@ def main() -> None:
         cfg = get_config()
         if cfg.validation.auto_validate_on_sync:
             logger.info("Running tag validation on startup...")
-            validation_result = asyncio.run(validate_poem_tags())
+            # validate_poem_tags is a FunctionTool; call its underlying fn.
+            # It returns a ValidationResult model (attribute access, not dict).
+            validation_result = asyncio.run(validate_poem_tags.fn())
 
-            if validation_result['valid']:
+            if validation_result.valid:
                 logger.info("✅ Tag validation passed - all tags match nexus definitions")
             else:
                 logger.warning(
-                    f"⚠️  Found {validation_result['violations_count']} invalid tags "
-                    f"across {len(validation_result['affected_poems'])} poems"
+                    f"⚠️  Found {validation_result.violations_count} invalid tags "
+                    f"across {len(validation_result.affected_poems)} poems"
                 )
-                logger.warning(f"Invalid tags: {', '.join(validation_result['invalid_tags'][:5])}")
-                if len(validation_result['invalid_tags']) > 5:
-                    logger.warning(f"... and {len(validation_result['invalid_tags']) - 5} more")
+                logger.warning(f"Invalid tags: {', '.join(validation_result.invalid_tags[:5])}")
+                if len(validation_result.invalid_tags) > 5:
+                    logger.warning(f"... and {len(validation_result.invalid_tags) - 5} more")
     except Exception as e:
         logger.error(f"Tag validation failed: {e}")
         # Continue anyway - validation failure shouldn't prevent server startup
