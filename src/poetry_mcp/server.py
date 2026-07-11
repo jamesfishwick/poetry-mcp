@@ -1437,7 +1437,9 @@ async def refresh_nexus_poem_counts() -> NexusCountsResult:
         in your poetry collection. Run periodically to keep counts fresh.
     """
     cat = get_catalog()
-    registry = await get_all_nexuses()
+    # Call the underlying function: @mcp.tool wraps get_all_nexuses in a
+    # FunctionTool that is not directly callable from other tools.
+    registry = await get_all_nexuses.fn()
 
     stats = {
         "themes": {"count": 0, "total_poems": 0},
@@ -1531,7 +1533,7 @@ async def validate_poem_tags() -> ValidationResult:
         4. Validate again until clean
     """
     cat = get_catalog()
-    registry = await get_all_nexuses()
+    registry = await get_all_nexuses.fn()
 
     # Collect all valid canonical tags from nexuses
     valid_tags = set()
@@ -1738,7 +1740,7 @@ async def delete_nexus(
 
     try:
         cat = get_catalog()
-        registry = await get_all_nexuses()
+        registry = await get_all_nexuses.fn()
 
         # Find the nexus to get its canonical_tag
         nexus_list = {
@@ -1764,17 +1766,24 @@ async def delete_nexus(
 
         # Clean up poems if requested
         if cleanup_poems and nexus.canonical_tag:
+            from .writers.frontmatter_writer import update_poem_tags
+
             poems_with_tag = cat.index.get_by_tag(nexus.canonical_tag)
             logger.info(f"Cleaning up {len(poems_with_tag)} poems with tag '{nexus.canonical_tag}'")
 
             for poem in poems_with_tag:
                 try:
-                    # Remove the tag from poem
-                    update_poem_tags(
-                        poem_path=poem.file_path,
+                    # Remove the tag from the poem's frontmatter. file_path is
+                    # vault-relative, so resolve it against the vault root.
+                    result = update_poem_tags(
+                        cat.vault_root / poem.file_path,
                         tags_to_remove=[nexus.canonical_tag],
+                        create_backup_file=True,
                     )
-                    poems_cleaned += 1
+                    if result.success:
+                        poems_cleaned += 1
+                    else:
+                        logger.warning(f"Failed to remove tag from {poem.title}: {result.error}")
                 except Exception as e:
                     logger.warning(f"Failed to remove tag from {poem.title}: {e}")
 
