@@ -14,13 +14,37 @@ from ..models.poem import Poem
 from ..errors import FrontmatterParseError
 
 
-def parse_poem_file(file_path: Path, vault_root: Path) -> Poem:
+# Canonical mapping from a poem's top-level catalog subfolder to its state.
+# Folder is authoritative; this is the single source of truth for that mapping
+# and is also used as the default for VaultConfig.folder_state_map. Note the
+# deliberate singular/plural handling: "Risks" -> "risk", "Fledgelings" ->
+# "fledgeling". "phone-poetry" is the one subfolder whose state slug differs
+# from a simple lowercase of the folder name.
+DEFAULT_FOLDER_STATE_MAP: dict[str, str] = {
+    "Completed": "completed",
+    "Fledgelings": "fledgeling",
+    "Needs Research": "needs_research",
+    "Risks": "risk",
+    "Still Cooking": "still_cooking",
+    "phone-poetry": "phone_poetry",
+}
+
+
+def parse_poem_file(
+    file_path: Path,
+    vault_root: Path,
+    folder_state_map: Optional[dict[str, str]] = None,
+) -> Poem:
     """
     Parse a poem markdown file into a Poem object.
 
     Args:
         file_path: Absolute path to the markdown file
         vault_root: Absolute path to vault root (for relative paths)
+        folder_state_map: Optional folder->state map used to derive state from
+            the poem's top-level catalog subfolder. When None, defaults to
+            DEFAULT_FOLDER_STATE_MAP. Passing it explicitly (as Catalog does)
+            keeps parsing decoupled from the global config singleton.
 
     Returns:
         Poem object with frontmatter metadata and computed fields
@@ -64,12 +88,16 @@ def parse_poem_file(file_path: Path, vault_root: Path) -> Poem:
         relative_path = str(file_path)
 
     # Extract required fields with defaults
-    state = frontmatter.get("state")
     form = frontmatter.get("form")
 
-    # Validate required fields
+    # State is derived from folder location, which is authoritative.
+    # The frontmatter "state" field (if present) is ignored except as a
+    # fallback for files in folders not covered by the folder_state_map.
+    state = derive_state_from_path(file_path, vault_root, folder_state_map)
     if not state:
-        # Infer state from directory structure if missing
+        state = frontmatter.get("state")
+    if not state:
+        # Legacy heuristic fallback for anything still unresolved
         state = infer_state_from_path(file_path)
 
     if not form:
@@ -204,9 +232,68 @@ def extract_title(content: str, file_path: Path) -> str:
     return name
 
 
+def derive_state_from_path(
+    file_path: Path,
+    vault_root: Path,
+    folder_state_map: Optional[dict[str, str]] = None,
+) -> Optional[str]:
+    """
+    Derive poem state from its top-level catalog subfolder (authoritative).
+
+    The state is determined by parts[0] of the file's path relative to the
+    catalog directory, looked up in the folder_state_map. Nested folders
+    inherit their top-level parent's state (depth rule): a poem in
+    Completed/chapbook/bredan/ resolves to "completed" because its top-level
+    folder is "Completed".
+
+    Args:
+        file_path: Absolute path to the poem file
+        vault_root: Absolute path to the vault root
+        folder_state_map: Folder->state map. When None, defaults to
+            DEFAULT_FOLDER_STATE_MAP.
+
+    Returns:
+        Mapped state string, or None if the folder is not in the map
+        (e.g. a file directly under catalog/, or an unmapped subfolder),
+        in which case the caller falls back to frontmatter or heuristics.
+    """
+    if folder_state_map is None:
+        folder_state_map = DEFAULT_FOLDER_STATE_MAP
+
+    # Locate the catalog root by walking up from the file to a "catalog"
+    # directory under the vault. This avoids a hard dependency on the config
+    # singleton in the parse hot path (which would otherwise pollute the
+    # cached config during tests).
+    catalog_dir = None
+    for parent in file_path.parents:
+        if parent.name == "catalog" and parent.parent == vault_root:
+            catalog_dir = parent
+            break
+    if catalog_dir is None:
+        # Fall back to the conventional location
+        catalog_dir = vault_root / "catalog"
+
+    try:
+        rel = file_path.relative_to(catalog_dir)
+    except ValueError:
+        # File is not under the catalog directory
+        return None
+
+    # Need at least one subfolder plus the filename
+    if len(rel.parts) < 2:
+        return None
+
+    top_folder = rel.parts[0]
+    return folder_state_map.get(top_folder)
+
+
 def infer_state_from_path(file_path: Path) -> str:
     """
     Infer poem state from directory structure.
+
+    Legacy heuristic fallback, retained only for files that
+    derive_state_from_path cannot resolve (folders absent from the
+    folder_state_map). Folder-based derivation is preferred.
 
     Args:
         file_path: Path to poem file

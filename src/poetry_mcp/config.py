@@ -12,6 +12,8 @@ from typing import Optional, Literal
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
+from .parsers.frontmatter_parser import DEFAULT_FOLDER_STATE_MAP as _DEFAULT_FOLDER_STATE_MAP
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,16 @@ class VaultConfig(BaseModel):
     custom_states: list[str] = Field(
         default_factory=list,
         description="Additional custom states beyond the standard ones (e.g., ['phone_poetry'])",
+    )
+
+    folder_state_map: dict[str, str] = Field(
+        default_factory=lambda: dict(_DEFAULT_FOLDER_STATE_MAP),
+        description=(
+            "Maps a poem's top-level catalog subfolder to its state. Folder is "
+            "authoritative: a poem's state is derived from parts[0] of its path "
+            "relative to catalog/, regardless of any frontmatter state field. "
+            "Nested folders inherit their top-level parent's state (depth rule)."
+        ),
     )
 
     @field_validator("path")

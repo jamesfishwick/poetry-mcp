@@ -262,6 +262,7 @@ class Catalog:
         vault_root: Path,
         exclude_dirs: Optional[list[str]] = None,
         custom_states: Optional[list[str]] = None,
+        folder_state_map: Optional[dict[str, str]] = None,
     ):
         """
         Initialize catalog with vault root.
@@ -270,6 +271,10 @@ class Catalog:
             vault_root: Absolute path to Poetry vault root
             exclude_dirs: Optional list of catalog subdirectories to exclude from scanning
             custom_states: Optional list of custom states to accept (beyond standard states)
+            folder_state_map: Optional folder->state map (injected). When None,
+                defaults to DEFAULT_FOLDER_STATE_MAP. Folder-derived states are
+                automatically treated as valid so the map cannot drift out of
+                sync with custom_states.
         """
         self.vault_root = Path(vault_root)
         self.catalog_dir = self.vault_root / "catalog"
@@ -277,11 +282,25 @@ class Catalog:
         self.index = CatalogIndex()
         self.last_sync: Optional[str] = None
 
-        # Set custom states on Poem model for validation
-        if custom_states:
-            from ..models.poem import Poem
+        # Resolve the folder->state map. Prefer the injected map; otherwise use
+        # the canonical default constant. This class never reaches into the
+        # global config singleton, which keeps it decoupled and keeps tests
+        # isolated (constructing a Catalog must not populate the config cache).
+        from ..parsers.frontmatter_parser import DEFAULT_FOLDER_STATE_MAP
 
-            Poem.set_custom_states(custom_states)
+        self.folder_state_map = (
+            folder_state_map if folder_state_map is not None else DEFAULT_FOLDER_STATE_MAP
+        )
+
+        # Set custom states on Poem model for validation. Include any states
+        # produced by the folder_state_map so that folder-derived states are
+        # always valid, even if a folder was added to the map without also
+        # being listed in custom_states.
+        from ..models.poem import Poem
+
+        extra_states = set(custom_states or []) | set(self.folder_state_map.values())
+        if extra_states:
+            Poem.set_custom_states(sorted(extra_states))
 
     def sync(self, force_rescan: bool = False, update_missing_metadata: bool = True) -> SyncResult:
         """
@@ -337,7 +356,9 @@ class Catalog:
         # Parse each file
         for md_file in markdown_files:
             try:
-                poem = parse_poem_file(md_file, self.vault_root)
+                poem = parse_poem_file(
+                    md_file, self.vault_root, folder_state_map=self.folder_state_map
+                )
 
                 # Check if poem already exists
                 existing = self.index.get_by_id(poem.id)
