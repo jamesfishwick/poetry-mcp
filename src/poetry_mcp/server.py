@@ -2049,6 +2049,45 @@ async def list_chains() -> dict:
     return await _list_chains()
 
 
+def _run_startup_tag_validation() -> Optional[ValidationResult]:
+    """Run tag validation once at startup, if enabled in config.
+
+    Returns the ValidationResult, or None when validation is disabled or an
+    error occurs. Startup must never be blocked by validation, so all failures
+    are logged and swallowed rather than raised.
+
+    validate_poem_tags is an @mcp.tool FunctionTool (not directly callable) and
+    returns a ValidationResult model, so this calls `.fn()` and reads the result
+    via attributes.
+    """
+    try:
+        from .config import get_config
+
+        cfg = get_config()
+        if not cfg.validation.auto_validate_on_sync:
+            return None
+
+        logger.info("Running tag validation on startup...")
+        result = asyncio.run(validate_poem_tags.fn())
+
+        if result.valid:
+            logger.info("✅ Tag validation passed - all tags match nexus definitions")
+        else:
+            logger.warning(
+                f"⚠️  Found {result.violations_count} invalid tags "
+                f"across {len(result.affected_poems)} poems"
+            )
+            logger.warning(f"Invalid tags: {', '.join(result.invalid_tags[:5])}")
+            if len(result.invalid_tags) > 5:
+                logger.warning(f"... and {len(result.invalid_tags) - 5} more")
+
+        return result
+    except Exception as e:
+        logger.error(f"Tag validation failed: {e}")
+        # Continue anyway - validation failure shouldn't prevent server startup
+        return None
+
+
 def main() -> None:
     """Main entry point for the MCP server."""
     logger.info("Starting Poetry MCP Server...")
@@ -2083,28 +2122,7 @@ def main() -> None:
         logger.error(f"Failed to initialize chain tools: {e}")
 
     # Auto-validate tags on startup if enabled
-    try:
-        from .config import get_config
-        cfg = get_config()
-        if cfg.validation.auto_validate_on_sync:
-            logger.info("Running tag validation on startup...")
-            # validate_poem_tags is a FunctionTool; call its underlying fn.
-            # It returns a ValidationResult model (attribute access, not dict).
-            validation_result = asyncio.run(validate_poem_tags.fn())
-
-            if validation_result.valid:
-                logger.info("✅ Tag validation passed - all tags match nexus definitions")
-            else:
-                logger.warning(
-                    f"⚠️  Found {validation_result.violations_count} invalid tags "
-                    f"across {len(validation_result.affected_poems)} poems"
-                )
-                logger.warning(f"Invalid tags: {', '.join(validation_result.invalid_tags[:5])}")
-                if len(validation_result.invalid_tags) > 5:
-                    logger.warning(f"... and {len(validation_result.invalid_tags) - 5} more")
-    except Exception as e:
-        logger.error(f"Tag validation failed: {e}")
-        # Continue anyway - validation failure shouldn't prevent server startup
+    _run_startup_tag_validation()
 
     # Run the server
     mcp.run()
