@@ -966,8 +966,9 @@ async def sync_submissions(force_rescan: bool = False) -> SyncSubmissionsResult:
     config = load_config()
     venues_dir = config.vault.path / config.vault.venues_dir
 
-    # Get all unique venue names from submissions
-    all_submissions = sub_cat.all_submissions
+    # Get all unique venue names from submissions. SubmissionCatalog exposes
+    # get_all(); it has no `all_submissions` attribute (that lives on the index).
+    all_submissions = sub_cat.get_all()
     venue_names = set(sub.venue_name for sub in all_submissions)
 
     # Regenerate each venue file
