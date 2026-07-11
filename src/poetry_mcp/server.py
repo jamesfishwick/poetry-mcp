@@ -1679,7 +1679,7 @@ async def create_nexus(
             file_path=nexus.file_path,
         )
 
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError) as e:
         logger.error(f"Failed to create nexus: {e}")
         return NexusOperationResult(
             success=False,
@@ -1771,6 +1771,7 @@ async def delete_nexus(
             )
 
         poems_cleaned = 0
+        cleanup_errors: list[str] = []
 
         # Clean up poems if requested
         if cleanup_poems and nexus.canonical_tag:
@@ -1791,13 +1792,21 @@ async def delete_nexus(
                     if result.success:
                         poems_cleaned += 1
                     else:
-                        logger.warning(f"Failed to remove tag from {poem.title}: {result.error}")
-                except Exception as e:
-                    logger.warning(f"Failed to remove tag from {poem.title}: {e}")
+                        msg = f"Failed to remove tag from {poem.title}: {result.error}"
+                        logger.warning(msg)
+                        cleanup_errors.append(msg)
+                except OSError as e:
+                    # A single poem failing must not silently vanish: record it
+                    # so the caller sees partial cleanup instead of false success.
+                    msg = f"Failed to remove tag from {poem.title}: {e}"
+                    logger.warning(msg)
+                    cleanup_errors.append(msg)
 
             # Resync catalog after tag removals
             cat.sync(force_rescan=True)
-            logger.info(f"Catalog resynced after cleaning {poems_cleaned} poems")
+            logger.info(
+                f"Catalog resynced: {poems_cleaned} cleaned, {len(cleanup_errors)} failed"
+            )
 
         # Delete the nexus file
         manager = get_nexus_manager()
@@ -1819,9 +1828,11 @@ async def delete_nexus(
             operation="deleted",
             file_path=delete_result["deleted"],
             poems_cleaned=poems_cleaned,
+            poems_failed=len(cleanup_errors),
+            cleanup_errors=cleanup_errors,
         )
 
-    except Exception as e:
+    except (OSError, KeyError, RuntimeError) as e:
         logger.error(f"Failed to delete nexus: {e}")
         return NexusOperationResult(
             success=False,
@@ -2135,18 +2146,16 @@ def main() -> None:
     """Main entry point for the MCP server."""
     logger.info("Starting Poetry MCP Server...")
 
-    # Auto-sync catalog on startup
+    # Auto-sync catalog on startup. Fail loud: a server started with no
+    # catalog is broken, and swallowing here also left `cat` unbound for the
+    # tool initializers below.
     logger.info("Auto-syncing catalog on startup...")
-    try:
-        cat = get_catalog()
-        result = cat.sync()
-        logger.info(
-            f"Initial sync complete: {result.total_poems} poems loaded "
-            f"in {result.duration_seconds:.2f}s"
-        )
-    except Exception as e:
-        logger.error(f"Failed to sync catalog on startup: {e}")
-        # Continue anyway - tools will still work
+    cat = get_catalog()
+    result = cat.sync()
+    logger.info(
+        f"Initial sync complete: {result.total_poems} poems loaded "
+        f"in {result.duration_seconds:.2f}s"
+    )
 
     # Initialize enrichment tools
     logger.info("Initializing enrichment tools...")

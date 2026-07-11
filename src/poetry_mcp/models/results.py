@@ -213,6 +213,12 @@ class NexusOperationResult(BaseModel):
     operation: str = Field(..., description="Operation performed (created/deleted/updated)")
     file_path: Optional[str] = Field(None, description="Path to nexus file")
     poems_cleaned: int = Field(default=0, description="Number of poems cleaned up (delete only)")
+    poems_failed: int = Field(
+        default=0, description="Number of poems that failed cleanup (delete only)"
+    )
+    cleanup_errors: List[str] = Field(
+        default_factory=list, description="Per-poem cleanup failure messages (delete only)"
+    )
     error: Optional[str] = Field(None, description="Error message if operation failed")
 
 
