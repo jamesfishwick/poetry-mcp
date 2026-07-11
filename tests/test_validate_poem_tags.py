@@ -27,8 +27,9 @@ def test_validate_poem_tags_returns_model_with_attribute_fields():
     registry = Mock(themes=[theme], motifs=[], forms=[])
 
     # validate_poem_tags calls the plain enrichment impl (_get_all_nexuses).
-    with patch.object(server_module, "get_catalog", return_value=cat), patch.object(
-        server_module, "_get_all_nexuses", AsyncMock(return_value=registry)
+    with (
+        patch.object(server_module, "get_catalog", return_value=cat),
+        patch.object(server_module, "_get_all_nexuses", AsyncMock(return_value=registry)),
     ):
         result = asyncio.run(server_module.validate_poem_tags.fn())
 

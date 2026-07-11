@@ -5,7 +5,7 @@ collections of related poems.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from ..catalog.catalog import Catalog
 from ..writers.frontmatter_writer import update_poem_chains
@@ -13,7 +13,7 @@ from ..writers.frontmatter_writer import update_poem_chains
 logger = logging.getLogger(__name__)
 
 # Module-level catalog reference (initialized by server)
-_catalog: Optional[Catalog] = None
+_catalog: Catalog | None = None
 
 
 def initialize_chain_tools(catalog: Catalog) -> None:
@@ -32,9 +32,7 @@ def initialize_chain_tools(catalog: Catalog) -> None:
 def _get_catalog() -> Catalog:
     """Get catalog, raising if not initialized."""
     if _catalog is None:
-        raise RuntimeError(
-            "Chain tools not initialized. Call initialize_chain_tools() first."
-        )
+        raise RuntimeError("Chain tools not initialized. Call initialize_chain_tools() first.")
     return _catalog
 
 
@@ -137,7 +135,7 @@ async def create_chain(
 async def add_poems_to_chain(
     chain_id: str,
     poem_ids: list[str],
-    positions: Optional[list[int]] = None,
+    positions: list[int] | None = None,
 ) -> dict[str, Any]:
     """Add poems to an existing chain.
 
@@ -506,10 +504,7 @@ async def get_chain(
         }
 
     # Check if any poems have positions (ordered chain)
-    is_ordered = any(
-        p.chain_positions and normalized_chain in p.chain_positions
-        for p in poems
-    )
+    is_ordered = any(p.chain_positions and normalized_chain in p.chain_positions for p in poems)
 
     # Build poem list
     poem_list = []
@@ -549,15 +544,14 @@ async def list_chains() -> dict[str, Any]:
     chain_list = []
     for chain_id, poem_count in sorted(chains_data.items()):
         poems = cat.index.get_by_chain(chain_id, ordered=False)
-        is_ordered = any(
-            p.chain_positions and chain_id in p.chain_positions
-            for p in poems
+        is_ordered = any(p.chain_positions and chain_id in p.chain_positions for p in poems)
+        chain_list.append(
+            {
+                "chain_id": chain_id,
+                "poem_count": poem_count,
+                "is_ordered": is_ordered,
+            }
         )
-        chain_list.append({
-            "chain_id": chain_id,
-            "poem_count": poem_count,
-            "is_ordered": is_ordered,
-        })
 
     return {
         "success": True,

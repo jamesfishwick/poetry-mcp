@@ -1,20 +1,21 @@
 """Tests for similarity tools - finding related poems by metadata connections."""
 
-import pytest
 from datetime import datetime
 from unittest.mock import Mock
 
-from poetry_mcp.models.poem import Poem
-from poetry_mcp.models.nexus import Nexus, NexusRegistry
+import pytest
+
 from poetry_mcp.catalog.catalog import Catalog, CatalogIndex
+from poetry_mcp.models.nexus import Nexus, NexusRegistry
+from poetry_mcp.models.poem import Poem
 from poetry_mcp.tools.similarity_tools import (
-    initialize_similarity_tools,
-    find_similar_poems,
-    _get_nexus_canonical_tags,
-    NEXUS_WEIGHT,
     CHAIN_WEIGHT,
-    TAG_WEIGHT,
     FORM_WEIGHT,
+    NEXUS_WEIGHT,
+    TAG_WEIGHT,
+    _get_nexus_canonical_tags,
+    find_similar_poems,
+    initialize_similarity_tools,
 )
 
 
@@ -353,6 +354,7 @@ class TestNotInitialized:
         """Calling find_similar_poems before init raises RuntimeError."""
         # Reset module state by initializing with None catalog
         import poetry_mcp.tools.similarity_tools as mod
+
         mod._catalog = None
 
         with pytest.raises(RuntimeError, match="not initialized"):

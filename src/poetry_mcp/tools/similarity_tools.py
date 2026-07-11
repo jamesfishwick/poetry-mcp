@@ -4,13 +4,12 @@ Scores poems by shared nexus membership, tag overlap, chain
 co-membership, and form to find poems similar to a given poem.
 """
 
-import time
 import logging
-from typing import Optional
+import time
 
 from ..catalog.catalog import Catalog
 from ..models.nexus import NexusRegistry
-from ..models.results import SimilarPoemMatch, SimilarityResult
+from ..models.results import SimilarityResult, SimilarPoemMatch
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +20,13 @@ TAG_WEIGHT = 1.0
 FORM_WEIGHT = 0.5
 
 # Module-level state (initialized by server)
-_catalog: Optional[Catalog] = None
-_nexus_registry: Optional[NexusRegistry] = None
+_catalog: Catalog | None = None
+_nexus_registry: NexusRegistry | None = None
 
 
 def initialize_similarity_tools(
     catalog: Catalog,
-    nexus_registry: Optional[NexusRegistry] = None,
+    nexus_registry: NexusRegistry | None = None,
 ) -> None:
     """Initialize similarity tools with catalog and optional nexus registry.
 
@@ -48,8 +47,7 @@ def initialize_similarity_tools(
 def _get_catalog() -> Catalog:
     if _catalog is None:
         raise RuntimeError(
-            "Similarity tools not initialized. "
-            "Call initialize_similarity_tools() first."
+            "Similarity tools not initialized. Call initialize_similarity_tools() first."
         )
     return _catalog
 

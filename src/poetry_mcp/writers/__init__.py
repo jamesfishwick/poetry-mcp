@@ -1,9 +1,9 @@
 """Writers for updating Poetry catalog files."""
 
 from .frontmatter_writer import (
-    update_poem_tags,
-    update_poem_frontmatter,
     FrontmatterUpdateResult,
+    update_poem_frontmatter,
+    update_poem_tags,
 )
 
 __all__ = [

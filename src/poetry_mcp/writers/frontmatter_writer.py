@@ -5,9 +5,9 @@ Provides atomic write operations with backup and rollback capabilities.
 
 import shutil
 import tempfile
-from pathlib import Path
-from typing import Any, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel
@@ -20,19 +20,19 @@ class FrontmatterUpdateResult(BaseModel):
 
     success: bool
     file_path: str
-    backup_path: Optional[str] = None
+    backup_path: str | None = None
     # Tag updates
     tags_added: list[str] = []
     tags_removed: list[str] = []
-    _final_tags: Optional[list[str]] = None
+    _final_tags: list[str] | None = None
     # Chain updates
     chains_added: list[str] = []
     chains_removed: list[str] = []
-    positions_updated: Optional[dict[str, int]] = None
-    _final_chains: Optional[list[str]] = None
-    _final_positions: Optional[dict[str, int]] = None
+    positions_updated: dict[str, int] | None = None
+    _final_chains: list[str] | None = None
+    _final_positions: dict[str, int] | None = None
     # Error
-    error: Optional[str] = None
+    error: str | None = None
 
     @property
     def updated_tags(self) -> list[str]:
@@ -50,7 +50,7 @@ class FrontmatterUpdateResult(BaseModel):
         return self.chains_added
 
     @property
-    def updated_positions(self) -> Optional[dict[str, int]]:
+    def updated_positions(self) -> dict[str, int] | None:
         """Return final chain positions after update."""
         return self._final_positions
 
@@ -241,8 +241,8 @@ def update_poem_frontmatter(
 
 def update_poem_tags(
     file_path: Path | str,
-    tags_to_add: Optional[list[str]] = None,
-    tags_to_remove: Optional[list[str]] = None,
+    tags_to_add: list[str] | None = None,
+    tags_to_remove: list[str] | None = None,
     create_backup_file: bool = True,
 ) -> FrontmatterUpdateResult:
     """Update tags in a poem's frontmatter.
@@ -349,9 +349,9 @@ def update_poem_tags(
 
 def update_poem_chains(
     file_path: Path | str,
-    chains_to_add: Optional[list[str]] = None,
-    chains_to_remove: Optional[list[str]] = None,
-    position_updates: Optional[dict[str, Optional[int]]] = None,
+    chains_to_add: list[str] | None = None,
+    chains_to_remove: list[str] | None = None,
+    position_updates: dict[str, int | None] | None = None,
     create_backup_file: bool = True,
 ) -> FrontmatterUpdateResult:
     """Update chain membership and positions in a poem's frontmatter.

@@ -1,8 +1,9 @@
 """Integration tests for quality scoring MCP tools."""
 
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import pytest
 
 from poetry_mcp.catalog.catalog import Catalog
 
@@ -401,8 +402,8 @@ class TestQualityScoringIntegration:
 
         from poetry_mcp.server import (
             commit_quality_scores_impl,
-            get_quality_scores_impl,
             find_high_scoring_poems_impl,
+            get_quality_scores_impl,
         )
 
         commit_result = commit_quality_scores_impl(

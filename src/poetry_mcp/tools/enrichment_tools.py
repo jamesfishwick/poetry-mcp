@@ -1,21 +1,21 @@
 """MCP tools for enriching poetry catalog with connections and metadata."""
 
-from typing import Optional, List, Any
 import logging
+from typing import Any
 
+from ..catalog.catalog import Catalog
+from ..config import load_config
 from ..models.nexus import NexusRegistry
 from ..parsers.nexus_parser import load_nexus_registry
 from ..writers.frontmatter_writer import (
     update_poem_tags,
 )
-from ..catalog.catalog import Catalog
-from ..config import load_config
 
 logger = logging.getLogger(__name__)
 
 # Global state (will be initialized by server)
-_catalog: Optional[Catalog] = None
-_nexus_registry: Optional[NexusRegistry] = None
+_catalog: Catalog | None = None
+_nexus_registry: NexusRegistry | None = None
 
 
 def initialize_enrichment_tools(catalog: Catalog) -> None:
@@ -283,7 +283,7 @@ Confidence guide:
 
 
 async def get_poems_for_enrichment(
-    poem_ids: Optional[List[str]] = None,
+    poem_ids: list[str] | None = None,
     max_poems: int = 50,
 ) -> dict:
     """Get list of poems needing theme enrichment for agent analysis.
@@ -494,13 +494,13 @@ async def sync_nexus_tags(
                 break
 
     # Determine what changes to make based on direction
-    tags_to_add: List[str] = []
-    conflicts: List[str] = []
+    tags_to_add: list[str] = []
+    conflicts: list[str] = []
     changes_made = False
 
     if direction in ["links_to_tags", "both"]:
         # Add tags based on links found
-        for link, tag in links_to_tags.items():
+        for _link, tag in links_to_tags.items():
             if tag and tag not in current_tags:  # Guard against None
                 tags_to_add.append(tag)
                 changes_made = True
@@ -700,7 +700,7 @@ async def move_poem_to_state(
 
 async def grade_poem_quality(
     poem_id: str,
-    dimensions: Optional[List[str]] = None,
+    dimensions: list[str] | None = None,
 ) -> dict:
     """Prepare poem and quality rubric for grading by the MCP agent.
 

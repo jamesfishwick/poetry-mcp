@@ -1,13 +1,15 @@
 """Edge case and error handling tests for frontmatter parser."""
 
-import pytest
 from pathlib import Path
-from poetry_mcp.parsers.frontmatter_parser import (
-    parse_poem_file,
-    extract_frontmatter,
-    estimate_syllables,
-)
+
+import pytest
+
 from poetry_mcp.errors import FrontmatterParseError
+from poetry_mcp.parsers.frontmatter_parser import (
+    estimate_syllables,
+    extract_frontmatter,
+    parse_poem_file,
+)
 
 
 @pytest.fixture

@@ -1,14 +1,15 @@
 """Unit tests for Pydantic models."""
 
-import pytest
 from datetime import datetime
+
+import pytest
 from pydantic import ValidationError
 
-from poetry_mcp.models.poem import Poem
 from poetry_mcp.models.nexus import Nexus, NexusRegistry
+from poetry_mcp.models.poem import Poem
 from poetry_mcp.models.quality import Quality, QualityRegistry
+from poetry_mcp.models.results import CatalogStats, SearchResult, SyncResult
 from poetry_mcp.models.venue import Venue
-from poetry_mcp.models.results import SyncResult, SearchResult, CatalogStats
 
 
 class TestPoemModel:

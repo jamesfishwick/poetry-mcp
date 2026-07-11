@@ -1,24 +1,26 @@
 """Tests for chain tools - linking poems into sequences and collections."""
 
-import pytest
 from datetime import datetime
 from unittest.mock import Mock, patch
 
-from poetry_mcp.models.poem import Poem
+import pytest
+
 from poetry_mcp.catalog.catalog import Catalog, CatalogIndex
+from poetry_mcp.models.poem import Poem
 from poetry_mcp.tools.chain_tools import (
-    initialize_chain_tools,
     create_chain,
-    reorder_chain,
     delete_chain,
     get_chain,
+    initialize_chain_tools,
     list_chains,
+    reorder_chain,
 )
 
 
 @pytest.fixture
 def sample_poem():
     """Create a sample poem for testing."""
+
     def _create_poem(
         id: str,
         title: str = None,
@@ -39,6 +41,7 @@ def sample_poem():
             chains=chains or [],
             chain_positions=chain_positions,
         )
+
     return _create_poem
 
 
@@ -371,12 +374,8 @@ class TestReorderChain:
     async def test_reorder_chain_missing_poem(self, mock_catalog, sample_poem):
         """Test reorder with missing poem in order list."""
         mock_catalog.index.clear()
-        mock_catalog.index.add_poem(
-            sample_poem("poem-1", chains=["water"])
-        )
-        mock_catalog.index.add_poem(
-            sample_poem("poem-2", chains=["water"])
-        )
+        mock_catalog.index.add_poem(sample_poem("poem-1", chains=["water"]))
+        mock_catalog.index.add_poem(sample_poem("poem-2", chains=["water"]))
 
         initialize_chain_tools(mock_catalog)
 

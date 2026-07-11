@@ -4,8 +4,9 @@ Data comes from markdown file frontmatter, not BASE files.
 """
 
 from datetime import datetime
-from typing import Literal, Optional, ClassVar
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from typing import ClassVar, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Poem(BaseModel):
@@ -48,15 +49,15 @@ class Poem(BaseModel):
 
     # Frontmatter: Optional properties
     tags: list[str] = Field(default_factory=list, description="Thematic tags for nexus connections")
-    keywords: Optional[str] = Field(
+    keywords: str | None = Field(
         default=None, description="Legacy comma-separated keywords (prefer tags)"
     )
-    notes: Optional[str] = Field(default=None, description="Editorial notes about the poem")
+    notes: str | None = Field(default=None, description="Editorial notes about the poem")
 
     # Computed metrics
     word_count: int = Field(..., description="Total word count")
     line_count: int = Field(..., description="Total line count")
-    stanza_count: Optional[int] = Field(
+    stanza_count: int | None = Field(
         default=None, description="Number of stanzas (blank-line separated)"
     )
 
@@ -65,20 +66,18 @@ class Poem(BaseModel):
     updated_at: datetime = Field(..., description="File modification timestamp")
 
     # Content (optional, for search/display)
-    content: Optional[str] = Field(
+    content: str | None = Field(
         default=None, description="Full poem text (only included if requested)"
     )
 
     # Quality scores (optional, for grading)
-    qualities: Optional[dict[str, int]] = Field(
+    qualities: dict[str, int] | None = Field(
         default=None, description="Quality scores (0-10) keyed by dimension name"
     )
 
     # Chain membership (for linking poems into sequences or collections)
-    chains: list[str] = Field(
-        default_factory=list, description="Chain IDs this poem belongs to"
-    )
-    chain_positions: Optional[dict[str, int]] = Field(
+    chains: list[str] = Field(default_factory=list, description="Chain IDs this poem belongs to")
+    chain_positions: dict[str, int] | None = Field(
         default=None,
         description="Position in ordered chains (chain_id -> position). Absence means loose collection.",
     )
@@ -117,7 +116,7 @@ class Poem(BaseModel):
 
     @field_validator("qualities")
     @classmethod
-    def validate_qualities(cls, v: Optional[dict[str, int]]) -> Optional[dict[str, int]]:
+    def validate_qualities(cls, v: dict[str, int] | None) -> dict[str, int] | None:
         """Validate quality scores: 0-10 range, known dimension names."""
         if v is None:
             return None
@@ -167,9 +166,7 @@ class Poem(BaseModel):
 
     @field_validator("chain_positions")
     @classmethod
-    def validate_chain_positions(
-        cls, v: Optional[dict[str, int]]
-    ) -> Optional[dict[str, int]]:
+    def validate_chain_positions(cls, v: dict[str, int] | None) -> dict[str, int] | None:
         """Validate chain positions: positive integers only, normalize chain IDs."""
         if v is None:
             return None

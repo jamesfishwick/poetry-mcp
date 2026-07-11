@@ -2,9 +2,9 @@
 
 import pytest
 
-from poetry_mcp.parsers.venue_parser import VenueParser, VenueRegistry
-from poetry_mcp.models import Venue
 from poetry_mcp.errors import BaseParseError as ParseError
+from poetry_mcp.models import Venue
+from poetry_mcp.parsers.venue_parser import VenueParser, VenueRegistry
 
 
 @pytest.fixture

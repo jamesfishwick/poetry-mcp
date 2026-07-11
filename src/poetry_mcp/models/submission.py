@@ -5,10 +5,10 @@ Represents transactional submission tracking data: what was submitted,
 when, to where, and what the outcome was.
 """
 
-from typing import Optional, Literal
 from datetime import date
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SubmissionStatus = Literal[
     "planned",  # Considering for this venue, not yet submitted
@@ -49,32 +49,32 @@ class Submission(BaseModel):
     )
 
     # Dates
-    submitted_date: Optional[date | str] = Field(
+    submitted_date: date | str | None = Field(
         None, description="Date when submission was sent", examples=["2025-08-15", "2025-August"]
     )
 
-    due_date: Optional[date | str] = Field(
+    due_date: date | str | None = Field(
         None,
         description="Submission deadline (for planned submissions)",
         examples=["2025-10-31", "2025-October"],
     )
 
-    response_date: Optional[date | str] = Field(
+    response_date: date | str | None = Field(
         None,
         description="Expected response date or actual response date",
         examples=["2025-11-15", "2025-November"],
     )
 
     # Financial
-    cost: Optional[str] = Field(
+    cost: str | None = Field(
         None, description="Reading fee or submission cost", examples=["$3", "free", "$5"]
     )
 
     # Additional context
-    notes: Optional[str] = Field(None, description="Additional notes about this submission")
+    notes: str | None = Field(None, description="Additional notes about this submission")
 
     # Source tracking for debugging/auditing
-    source_file: Optional[str] = Field(
+    source_file: str | None = Field(
         None, description="Source file where this submission was parsed from"
     )
 
@@ -159,7 +159,7 @@ class SubmissionSummary(BaseModel):
         0, description="Total number of individual poems across all submissions"
     )
 
-    acceptance_rate: Optional[float] = Field(
+    acceptance_rate: float | None = Field(
         None, description="Percentage of completed submissions that were accepted"
     )
 

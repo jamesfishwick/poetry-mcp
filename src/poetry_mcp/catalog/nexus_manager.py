@@ -9,13 +9,13 @@ import re
 from pathlib import Path
 from typing import Literal
 
+from poetry_mcp.errors import BaseParseError as ParseError
 from poetry_mcp.models.nexus import Nexus
-from poetry_mcp.writers.nexus_writer import NexusWriter
 from poetry_mcp.writers.frontmatter_writer import (
     extract_frontmatter_and_content,
     serialize_frontmatter_and_content,
 )
-from poetry_mcp.errors import BaseParseError as ParseError
+from poetry_mcp.writers.nexus_writer import NexusWriter
 
 logger = logging.getLogger(__name__)
 
@@ -203,8 +203,7 @@ class NexusManager:
             else:
                 # Don't silently drop the update — surface that it had no home.
                 logger.warning(
-                    f"No '## Overview' section in {file_path}; "
-                    f"description not written to the body"
+                    f"No '## Overview' section in {file_path}; description not written to the body"
                 )
                 effective_description = new_description
         else:

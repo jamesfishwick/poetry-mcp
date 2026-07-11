@@ -1,16 +1,17 @@
 """Tests for frontmatter writer module."""
 
-import pytest
-from pathlib import Path
-import tempfile
 import shutil
+import tempfile
+from pathlib import Path
+
+import pytest
 
 from poetry_mcp.writers.frontmatter_writer import (
-    update_poem_tags,
-    update_poem_frontmatter,
     extract_frontmatter_and_content,
-    serialize_frontmatter_and_content,
     rollback_from_backup,
+    serialize_frontmatter_and_content,
+    update_poem_frontmatter,
+    update_poem_tags,
 )
 
 

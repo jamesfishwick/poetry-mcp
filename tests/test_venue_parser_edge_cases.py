@@ -5,6 +5,7 @@ boundary conditions, and exceptional scenarios not covered in the happy path tes
 """
 
 import pytest
+
 from poetry_mcp.parsers.venue_parser import VenueParser, VenueRegistry
 
 

@@ -8,12 +8,12 @@ Parses venue markdown files to extract:
 
 import re
 from pathlib import Path
-from typing import Optional
+
 import yaml
 from pydantic import ValidationError
 
-from poetry_mcp.models import Venue, Submission
 from poetry_mcp.errors import BaseParseError as ParseError
+from poetry_mcp.models import Submission, Venue
 
 
 class VenueParser:
@@ -132,10 +132,10 @@ class VenueParser:
 
     def _parse_table_row(
         self, cols: list[str], headers: list[str], status: str, venue_name: str, file_path: Path
-    ) -> Optional[Submission]:
+    ) -> Submission | None:
         """Parse a single table row into a Submission."""
         # Create dict mapping headers to values
-        row_data = {h.lower(): v for h, v in zip(headers, cols)}
+        row_data = {h.lower(): v for h, v in zip(headers, cols, strict=False)}
 
         # Extract poems (first column, comma-separated)
         poems_str = cols[0] if cols else ""
@@ -222,7 +222,7 @@ class VenueRegistry:
             except ParseError as e:
                 print(f"Warning: Skipping {md_file.name}: {e}")
 
-    def get_venue(self, name: str) -> Optional[Venue]:
+    def get_venue(self, name: str) -> Venue | None:
         """Get venue by name."""
         return self.venues.get(name)
 

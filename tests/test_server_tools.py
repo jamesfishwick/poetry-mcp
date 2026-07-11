@@ -1,11 +1,12 @@
 """Tests for server initialization and catalog wrapper functions."""
 
-import pytest
 from unittest.mock import Mock, patch
 
-from poetry_mcp.server import get_catalog
+import pytest
+
 from poetry_mcp.catalog.catalog import Catalog
-from poetry_mcp.models.results import SyncResult, CatalogStats
+from poetry_mcp.models.results import CatalogStats, SyncResult
+from poetry_mcp.server import get_catalog
 
 
 @pytest.fixture

@@ -36,8 +36,9 @@ def _result(valid: bool, invalid_tags=None):
 
 def test_returns_none_and_skips_when_disabled():
     validate = Mock(fn=AsyncMock())
-    with patch("poetry_mcp.config.get_config", return_value=_config(False)), patch.object(
-        server_module, "validate_poem_tags", validate
+    with (
+        patch("poetry_mcp.config.get_config", return_value=_config(False)),
+        patch.object(server_module, "validate_poem_tags", validate),
     ):
         assert server_module._run_startup_tag_validation() is None
     validate.fn.assert_not_called()
@@ -46,8 +47,9 @@ def test_returns_none_and_skips_when_disabled():
 def test_runs_and_returns_result_when_valid():
     result = _result(valid=True)
     validate = Mock(fn=AsyncMock(return_value=result))
-    with patch("poetry_mcp.config.get_config", return_value=_config(True)), patch.object(
-        server_module, "validate_poem_tags", validate
+    with (
+        patch("poetry_mcp.config.get_config", return_value=_config(True)),
+        patch.object(server_module, "validate_poem_tags", validate),
     ):
         out = server_module._run_startup_tag_validation()
     validate.fn.assert_called_once()
@@ -60,8 +62,9 @@ def test_handles_invalid_result_via_attributes():
     # attribute access here is exactly what the dict-subscript bug broke.
     tags = [f"bad{i}" for i in range(7)]
     validate = Mock(fn=AsyncMock(return_value=_result(valid=False, invalid_tags=tags)))
-    with patch("poetry_mcp.config.get_config", return_value=_config(True)), patch.object(
-        server_module, "validate_poem_tags", validate
+    with (
+        patch("poetry_mcp.config.get_config", return_value=_config(True)),
+        patch.object(server_module, "validate_poem_tags", validate),
     ):
         out = server_module._run_startup_tag_validation()
     assert out.valid is False
@@ -70,8 +73,9 @@ def test_handles_invalid_result_via_attributes():
 
 def test_swallows_validation_error_and_returns_none():
     validate = Mock(fn=AsyncMock(side_effect=RuntimeError("boom")))
-    with patch("poetry_mcp.config.get_config", return_value=_config(True)), patch.object(
-        server_module, "validate_poem_tags", validate
+    with (
+        patch("poetry_mcp.config.get_config", return_value=_config(True)),
+        patch.object(server_module, "validate_poem_tags", validate),
     ):
         # Must not raise: startup can't be blocked by validation.
         assert server_module._run_startup_tag_validation() is None

@@ -1,7 +1,8 @@
 """Integration tests for enrichment tools and workflows."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from poetry_mcp.writers.frontmatter_writer import update_poem_tags
 
@@ -71,7 +72,9 @@ Content here.
     def test_prevent_duplicate_tags(self, sample_poem_file):
         """Test that duplicate tags are not added."""
         result = update_poem_tags(
-            str(sample_poem_file), tags_to_add=["water"], tags_to_remove=[]  # Already exists
+            str(sample_poem_file),
+            tags_to_add=["water"],
+            tags_to_remove=[],  # Already exists
         )
 
         assert result.success is True
@@ -186,8 +189,9 @@ class TestEnrichmentWorkflow:
     @pytest.fixture
     def test_catalog(self, tmp_path, markdown_dir):
         """Create a test catalog with poems."""
-        from poetry_mcp.catalog.catalog import Catalog
         import shutil
+
+        from poetry_mcp.catalog.catalog import Catalog
 
         vault_dir = tmp_path / "vault"
         catalog_dir = vault_dir / "catalog" / "Completed"
@@ -260,8 +264,9 @@ class TestEnrichmentIntegration:
 
     def test_sync_after_enrichment(self, tmp_path, markdown_dir):
         """Test that catalog sync picks up enrichment changes."""
-        from poetry_mcp.catalog.catalog import Catalog
         import shutil
+
+        from poetry_mcp.catalog.catalog import Catalog
 
         vault_dir = tmp_path / "vault"
         catalog_dir = vault_dir / "catalog" / "Completed"

@@ -4,8 +4,7 @@ Quality dimensions define rating scales with rubrics for scoring poems.
 Data comes from Qualities markdown files with frontmatter.
 """
 
-from typing import Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Quality(BaseModel):
@@ -37,9 +36,7 @@ class Quality(BaseModel):
         ..., description="Rubric describing what scores mean on this dimension"
     )
 
-    file_path: Optional[str] = Field(
-        default=None, description="Path to individual quality note file"
-    )
+    file_path: str | None = Field(default=None, description="Path to individual quality note file")
 
     model_config = ConfigDict(
         json_schema_extra={

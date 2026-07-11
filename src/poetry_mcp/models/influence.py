@@ -4,8 +4,9 @@ Influences are writers, movements, aesthetics, and cultural phenomena that
 inform the poetry. Data comes from influences markdown files with frontmatter.
 """
 
-from typing import Literal, Optional
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Influence(BaseModel):
@@ -30,11 +31,11 @@ class Influence(BaseModel):
         ..., description="Type of influence"
     )
 
-    period: Optional[str] = Field(
+    period: str | None = Field(
         default=None, description="Time period or active years (e.g., '1940s-1999', 'Contemporary')"
     )
 
-    bibliography: Optional[str] = Field(
+    bibliography: str | None = Field(
         default=None, description="Key works (for writers), bibliography, or reference materials"
     )
 
@@ -42,7 +43,7 @@ class Influence(BaseModel):
         ..., description="Aesthetic description, stylistic approach, or cultural impact"
     )
 
-    file_path: Optional[str] = Field(
+    file_path: str | None = Field(
         default=None, description="Path to influence markdown file relative to vault root"
     )
 

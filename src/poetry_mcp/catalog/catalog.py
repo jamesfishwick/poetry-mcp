@@ -4,16 +4,14 @@ Scans markdown files in catalog/ directory and builds in-memory indices
 for fast querying. This is the core data structure for the MCP server.
 """
 
-import time
 import logging
-from pathlib import Path
-from typing import Optional
+import time
 from collections import defaultdict
+from pathlib import Path
 
 from ..models.poem import Poem
-from ..models.results import SyncResult, CatalogStats
-from ..parsers.frontmatter_parser import parse_poem_file, FrontmatterParseError
-
+from ..models.results import CatalogStats, SyncResult
+from ..parsers.frontmatter_parser import FrontmatterParseError, parse_poem_file
 
 logger = logging.getLogger(__name__)
 
@@ -75,15 +73,15 @@ class CatalogIndex:
         # All poems
         self.all_poems.append(poem)
 
-    def get_by_id(self, poem_id: str) -> Optional[Poem]:
+    def get_by_id(self, poem_id: str) -> Poem | None:
         """Get poem by ID (O(1) lookup)."""
         return self.by_id.get(poem_id)
 
-    def get_poem(self, poem_id: str) -> Optional[Poem]:
+    def get_poem(self, poem_id: str) -> Poem | None:
         """Alias for get_by_id for compatibility with enrichment tools."""
         return self.get_by_id(poem_id)
 
-    def get_by_id_or_title(self, identifier: str) -> Optional[Poem]:
+    def get_by_id_or_title(self, identifier: str) -> Poem | None:
         """Get poem by ID or title (fallback lookup).
 
         Args:
@@ -99,7 +97,7 @@ class CatalogIndex:
             poem = self.get_by_title(identifier)
         return poem
 
-    def get_by_title(self, title: str) -> Optional[Poem]:
+    def get_by_title(self, title: str) -> Poem | None:
         """Get poem by exact title (case-insensitive, O(1) lookup)."""
         return self.by_title.get(title.lower())
 
@@ -260,9 +258,9 @@ class Catalog:
     def __init__(
         self,
         vault_root: Path,
-        exclude_dirs: Optional[list[str]] = None,
-        custom_states: Optional[list[str]] = None,
-        folder_state_map: Optional[dict[str, str]] = None,
+        exclude_dirs: list[str] | None = None,
+        custom_states: list[str] | None = None,
+        folder_state_map: dict[str, str] | None = None,
     ):
         """
         Initialize catalog with vault root.
@@ -280,7 +278,7 @@ class Catalog:
         self.catalog_dir = self.vault_root / "catalog"
         self.exclude_dirs = exclude_dirs or []
         self.index = CatalogIndex()
-        self.last_sync: Optional[str] = None
+        self.last_sync: str | None = None
 
         # Resolve the folder->state map. Prefer the injected map; otherwise use
         # the canonical default constant. This class never reaches into the

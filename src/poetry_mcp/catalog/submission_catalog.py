@@ -4,15 +4,14 @@ Submission catalog with indexing and fast lookup.
 Scans submissions/ directory and provides indexed access to submission data.
 """
 
-import time
 import logging
-from pathlib import Path
-from typing import Optional
+import time
 from collections import defaultdict
+from pathlib import Path
 
+from poetry_mcp.errors import BaseParseError as ParseError
 from poetry_mcp.models.submission import Submission, SubmissionStatus, SubmissionSummary
 from poetry_mcp.parsers.submission_parser import SubmissionParser
-from poetry_mcp.errors import BaseParseError as ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +117,7 @@ class SubmissionCatalog:
         self.submissions_dir = Path(submissions_dir)
         self.parser = SubmissionParser()
         self.index = SubmissionIndex()
-        self._last_scan_time: Optional[float] = None
+        self._last_scan_time: float | None = None
 
     def sync(self, force_rescan: bool = False) -> dict:
         """
@@ -205,9 +204,9 @@ class SubmissionCatalog:
 
     def filter_submissions(
         self,
-        venue: Optional[str] = None,
-        status: Optional[SubmissionStatus] = None,
-        poem: Optional[str] = None,
+        venue: str | None = None,
+        status: SubmissionStatus | None = None,
+        poem: str | None = None,
     ) -> list[Submission]:
         """
         Filter submissions by multiple criteria.

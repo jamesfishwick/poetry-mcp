@@ -4,16 +4,16 @@ Handles loading and validation of configuration from YAML files,
 environment variables, and interactive setup.
 """
 
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Literal
+
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
 from .parsers.frontmatter_parser import DEFAULT_FOLDER_STATE_MAP as _DEFAULT_FOLDER_STATE_MAP
-
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class LoggingConfig(BaseModel):
         default="INFO", description="Log level"
     )
 
-    file: Optional[Path] = Field(default=None, description="Log file path (None = console only)")
+    file: Path | None = Field(default=None, description="Log file path (None = console only)")
 
     format: str = Field(
         default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -114,7 +114,8 @@ class ValidationConfig(BaseModel):
     """Tag validation configuration."""
 
     auto_validate_on_sync: bool = Field(
-        default=True, description="Automatically validate tags on server startup (after initial sync)"
+        default=True,
+        description="Automatically validate tags on server startup (after initial sync)",
     )
 
     strict_mode: bool = Field(
@@ -132,7 +133,7 @@ class PoetryMCPConfig(BaseModel):
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
 
 
-def find_config_file() -> Optional[Path]:
+def find_config_file() -> Path | None:
     """
     Find configuration file in standard locations.
 
@@ -184,7 +185,7 @@ def load_config_from_file(config_path: Path) -> PoetryMCPConfig:
         ValueError: If config file is invalid
     """
     try:
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             data = yaml.safe_load(f)
 
         if not data:
@@ -274,7 +275,7 @@ def prompt_for_vault_path() -> Path:
         return path
 
 
-def create_default_config(vault_path: Path, config_path: Optional[Path] = None) -> Path:
+def create_default_config(vault_path: Path, config_path: Path | None = None) -> Path:
     """
     Create default configuration file.
 
@@ -328,7 +329,7 @@ def create_default_config(vault_path: Path, config_path: Optional[Path] = None) 
     return config_path
 
 
-def save_config(config: PoetryMCPConfig, config_path: Optional[Path] = None) -> Path:
+def save_config(config: PoetryMCPConfig, config_path: Path | None = None) -> Path:
     """
     Save configuration to YAML file.
 
@@ -443,7 +444,7 @@ def load_config() -> PoetryMCPConfig:
 
 
 # Cached config instance
-_config_cache: Optional[PoetryMCPConfig] = None
+_config_cache: PoetryMCPConfig | None = None
 
 
 def get_config(force_reload: bool = False) -> PoetryMCPConfig:

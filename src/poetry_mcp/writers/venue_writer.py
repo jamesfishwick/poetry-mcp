@@ -5,13 +5,13 @@ Generates venue markdown files from venue metadata and submission data.
 Venue files are auto-generated views, not source-of-truth.
 """
 
-import yaml
-from pathlib import Path
-from typing import Optional
 from datetime import date
+from pathlib import Path
 
-from poetry_mcp.models.venue import Venue
+import yaml
+
 from poetry_mcp.models.submission import Submission
+from poetry_mcp.models.venue import Venue
 
 
 class VenueWriter:
@@ -93,7 +93,9 @@ class VenueWriter:
 
         return f"---\n{yaml_str}---"
 
-    def _generate_submission_tables(self, submissions: list[Submission], preserved_notes: Optional[str] = None) -> str:
+    def _generate_submission_tables(
+        self, submissions: list[Submission], preserved_notes: str | None = None
+    ) -> str:
         """Generate submission tables grouped by status."""
         # Group submissions by status
         by_status = {
@@ -201,7 +203,7 @@ class VenueWriter:
         else:
             return f"| {poems_text} | {date1} | {date2} | {cost} | {notes} |"
 
-    def _format_date(self, date_val: Optional[date | str]) -> str:
+    def _format_date(self, date_val: date | str | None) -> str:
         """Format a date for display."""
         if date_val is None:
             return "-"
@@ -209,39 +211,43 @@ class VenueWriter:
             return date_val.strftime("%Y-%m-%d")
         return str(date_val)
 
-    def _extract_notes_section(self, file_path: Path) -> Optional[str]:
+    def _extract_notes_section(self, file_path: Path) -> str | None:
         """
         Extract existing ## Notes section content from venue file.
-        
+
         Args:
             file_path: Path to existing venue file
-            
+
         Returns:
             Notes section content (everything after ## Notes heading) or None
         """
         import re
-        
+
         if not file_path.exists():
             return None
-            
+
         try:
             content = file_path.read_text(encoding="utf-8")
-            
+
             # Find ## Notes section
-            notes_match = re.search(r'^##\s+Notes\s*$', content, re.MULTILINE)
+            notes_match = re.search(r"^##\s+Notes\s*$", content, re.MULTILINE)
             if not notes_match:
                 return None
-            
+
             # Extract content from ## Notes to end of file (no next ## heading for Notes)
             start_pos = notes_match.end()
             notes_content = content[start_pos:].strip()
-            
+
             # Return preserved content (or None if it's just the default message)
-            if notes_content and notes_content != "_Add venue-specific observations, research, or strategy notes here_":
+            if (
+                notes_content
+                and notes_content
+                != "_Add venue-specific observations, research, or strategy notes here_"
+            ):
                 return notes_content + "\n"
-            
+
             return None
-            
+
         except Exception:
             # If we can't read the file, just return None
             return None
