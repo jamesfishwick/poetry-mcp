@@ -10,6 +10,7 @@ import asyncio
 from unittest.mock import Mock, patch
 
 import poetry_mcp.server as server_module
+import poetry_mcp.tools.submission_tools as submission_tools_module
 
 
 def test_sync_submissions_completes_without_attribute_error(tmp_path):
@@ -27,7 +28,10 @@ def test_sync_submissions_completes_without_attribute_error(tmp_path):
     )
     cfg = Mock(vault=Mock(path=vault, submissions_dir="submissions", venues_dir="venues"))
 
-    with patch.object(server_module, "load_config", return_value=cfg):
+    with (
+        patch.object(server_module, "load_config", return_value=cfg),
+        patch.object(submission_tools_module, "load_config", return_value=cfg),
+    ):
         # Point the module-global catalogs at the temp vault, and reset after
         # so this test never leaks a temp catalog into others.
         server_module.submission_catalog = None
