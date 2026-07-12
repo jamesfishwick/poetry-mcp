@@ -5,7 +5,6 @@ FastMCP server providing tools for poetry catalog and nexus management.
 
 import asyncio
 import logging
-import re
 import sys
 
 # Check Python version before any imports
@@ -31,7 +30,6 @@ from .models.results import (
     ServerInfo,
     SimilarityResult,
     SubmissionListResult,
-    SubmissionStatusChange,
     SyncResult,
     SyncSubmissionsResult,
     SyncVenuesResult,
@@ -105,6 +103,12 @@ from .tools.similarity_tools import (
 )
 from .tools.similarity_tools import (
     initialize_similarity_tools,
+)
+from .tools.submission_tools import (
+    get_submission_stats_impl,
+    list_submissions_impl,
+    sync_submissions_impl,
+    update_submission_status_impl,
 )
 from .utils import slugify_filename
 from .writers.venue_writer import VenueWriter
@@ -657,43 +661,10 @@ async def sync_submissions(force_rescan: bool = False) -> SyncSubmissionsResult:
         print(f"Loaded {result.total_submissions} submissions")
         ```
     """
-    logger.info(f"Syncing submissions (force_rescan={force_rescan})...")
-    sub_cat = get_submission_catalog()
-    result = sub_cat.sync(force_rescan=force_rescan)
-    logger.info(f"Submission sync complete: {result['total_submissions']} submissions")
-
-    # Auto-regenerate venue files for all venues with submissions
-    logger.info("Auto-regenerating venue files...")
-    ven_cat = get_venue_catalog()
-    config = load_config()
-    venues_dir = config.vault.path / config.vault.venues_dir
-
-    # Get all unique venue names from submissions. SubmissionCatalog exposes
-    # get_all(); it has no `all_submissions` attribute (that lives on the index).
-    all_submissions = sub_cat.get_all()
-    venue_names = set(sub.venue_name for sub in all_submissions)
-
-    # Regenerate each venue file
-    regenerated_count = 0
-    for venue_name in venue_names:
-        venue = ven_cat.get_by_name(venue_name)
-        if venue:
-            submissions = sub_cat.get_by_venue(venue_name)
-            output_path = venues_dir / f"{slugify_filename(venue_name)}.md"
-
-            writer = VenueWriter()
-            writer.generate_venue_file(venue, submissions, output_path)
-            regenerated_count += 1
-            logger.debug(f"Regenerated venue file: {venue_name}")
-
-    logger.info(f"Regenerated {regenerated_count} venue files")
-
-    return SyncSubmissionsResult(
-        success=True,
-        total_submissions=result["total_submissions"],
-        new_submissions=result["new_submissions"],
-        errors=result["errors"],
-        duration_seconds=result["duration_seconds"],
+    return await sync_submissions_impl(
+        force_rescan,
+        sub_cat=get_submission_catalog(),
+        ven_cat=get_venue_catalog(),
     )
 
 
@@ -732,26 +703,12 @@ async def list_submissions(
         result = await list_submissions(poem="Second Bridge Out Old Route 12")
         ```
     """
-    sub_cat = get_submission_catalog()
-
-    # Filter submissions
-    submissions = sub_cat.filter_submissions(venue=venue, status=status, poem=poem)
-
-    # Apply limit
-    total = len(submissions)
-    if limit:
-        submissions = submissions[:limit]
-
-    return SubmissionListResult(
-        success=True,
-        submissions=submissions,
-        total_count=total,
-        filters_applied={
-            "venue": venue,
-            "status": status,
-            "poem": poem,
-            "limit": limit,
-        },
+    return await list_submissions_impl(
+        venue,
+        status,
+        poem,
+        limit,
+        sub_cat=get_submission_catalog(),
     )
 
 
@@ -798,98 +755,13 @@ async def update_submission_status(
                                        current_status="submitted", dry_run=False)
         ```
     """
-    if not (venue or poem or current_status):
-        return UpdateSubmissionStatusResult(
-            success=False,
-            dry_run=dry_run,
-            new_status=new_status,
-            matched_count=0,
-            filters_applied={"venue": venue, "poem": poem, "current_status": current_status},
-            error=(
-                "Refusing to update all submissions: provide at least one of "
-                "venue, poem, or current_status to scope the change."
-            ),
-        )
-
-    sub_cat = get_submission_catalog()
-    matches = sub_cat.filter_submissions(venue=venue, status=current_status, poem=poem)
-
-    submitted_states = {"submitted", "accepted", "rejected", "withdrawn"}
-    changes: list[SubmissionStatusChange] = []
-    backups: list[str] = []
-
-    from pathlib import Path
-
-    import yaml
-
-    from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
-    from poetry_mcp.writers.frontmatter_writer import create_backup
-
-    for sub in matches:
-        # Skip no-ops so we neither back up nor rewrite unchanged files.
-        if sub.status == new_status:
-            continue
-
-        change = SubmissionStatusChange(
-            source_file=sub.source_file or "",
-            venue_name=sub.venue_name,
-            poems=sub.poems,
-            old_status=sub.status,
-            new_status=new_status,
-        )
-        changes.append(change)
-
-        if dry_run:
-            continue
-
-        if not sub.source_file:
-            return UpdateSubmissionStatusResult(
-                success=False,
-                dry_run=False,
-                new_status=new_status,
-                matched_count=len(matches),
-                changes=changes,
-                backups=backups,
-                filters_applied={"venue": venue, "poem": poem, "current_status": current_status},
-                error=f"Submission for {sub.venue_name} has no source_file; cannot write.",
-            )
-
-        file_path = Path(sub.source_file)
-        content = file_path.read_text(encoding="utf-8")
-        frontmatter, body = extract_frontmatter(content, file_path)
-
-        frontmatter["status"] = new_status
-        # Keep an explicit submitted flag consistent with the new status.
-        if "submitted" in frontmatter:
-            frontmatter["submitted"] = new_status in submitted_states
-
-        # Best-effort: keep the human-readable body "**Status**:" line in sync.
-        body = re.sub(
-            r"^(\*\*Status\*\*:).*$",
-            rf"\1 {new_status.title()}",
-            body,
-            count=1,
-            flags=re.MULTILINE,
-        )
-
-        fm_yaml = yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True)
-        new_content = f"---\n{fm_yaml}---\n{body}"
-
-        backups.append(str(create_backup(file_path)))
-        file_path.write_text(new_content, encoding="utf-8")
-
-    if not dry_run and changes:
-        sub_cat.sync(force_rescan=True)
-        logger.info(f"Updated {len(changes)} submissions to status '{new_status}'")
-
-    return UpdateSubmissionStatusResult(
-        success=True,
-        dry_run=dry_run,
-        new_status=new_status,
-        matched_count=len(matches),
-        changes=changes,
-        backups=backups,
-        filters_applied={"venue": venue, "poem": poem, "current_status": current_status},
+    return await update_submission_status_impl(
+        new_status,
+        venue,
+        poem,
+        current_status,
+        dry_run,
+        sub_cat=get_submission_catalog(),
     )
 
 
@@ -913,8 +785,7 @@ async def get_submission_stats() -> SubmissionSummary:
         print(f"Active submissions: {stats.active_submissions}")
         ```
     """
-    sub_cat = get_submission_catalog()
-    return sub_cat.get_summary()
+    return await get_submission_stats_impl(sub_cat=get_submission_catalog())
 
 
 # ============================================================================
