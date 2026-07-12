@@ -94,6 +94,12 @@ from .tools.enrichment_tools import (
 from .tools.enrichment_tools import (
     sync_nexus_tags as _sync_nexus_tags,
 )
+from .tools.nexus_tools import (
+    create_nexus_impl,
+    delete_nexus_impl,
+    refresh_nexus_poem_counts_impl,
+    validate_poem_tags_impl,
+)
 from .tools.quality_tools import (
     commit_quality_scores_impl,
     get_quality_scores_impl,
@@ -953,55 +959,9 @@ async def refresh_nexus_poem_counts() -> NexusCountsResult:
         This is useful for seeing which nexuses are most prevalent
         in your poetry collection. Run periodically to keep counts fresh.
     """
-    cat = get_catalog()
-    # Call the plain enrichment impl directly (never the @mcp.tool wrapper,
-    # which is a non-callable FunctionTool).
-    registry = await _get_all_nexuses()
-
-    stats = {
-        "themes": {"count": 0, "total_poems": 0},
-        "motifs": {"count": 0, "total_poems": 0},
-        "forms": {"count": 0, "total_poems": 0},
-    }
-
-    all_nexuses_with_counts = []
-
-    # Update poem_count for each nexus
-    for category_name, nexus_list in [
-        ("themes", registry.themes),
-        ("motifs", registry.motifs),
-        ("forms", registry.forms),
-    ]:
-        for nexus in nexus_list:
-            # Count poems with this canonical tag
-            poems = cat.index.get_by_tag(nexus.canonical_tag)
-            nexus.poem_count = len(poems)
-
-            stats[category_name]["count"] += 1
-            stats[category_name]["total_poems"] += len(poems)
-
-            all_nexuses_with_counts.append(
-                {
-                    "name": nexus.name,
-                    "category": nexus.category,
-                    "canonical_tag": nexus.canonical_tag,
-                    "poem_count": nexus.poem_count,
-                }
-            )
-
-    # Sort to find top nexuses
-    all_nexuses_with_counts.sort(key=lambda n: n["poem_count"], reverse=True)
-    top_nexuses = all_nexuses_with_counts[:5]
-
-    total_updated = sum(s["count"] for s in stats.values())
-
-    logger.info(f"Refreshed poem counts for {total_updated} nexuses")
-
-    return NexusCountsResult(
-        success=True,
-        nexuses_updated=total_updated,
-        stats=stats,
-        top_nexuses=top_nexuses,
+    return await refresh_nexus_poem_counts_impl(
+        catalog=get_catalog(),
+        registry=await _get_all_nexuses(),
     )
 
 
@@ -1051,68 +1011,9 @@ async def validate_poem_tags() -> ValidationResult:
         3. Re-sync catalog
         4. Validate again until clean
     """
-    cat = get_catalog()
-    registry = await _get_all_nexuses()
-
-    # Collect all valid canonical tags from nexuses
-    valid_tags = set()
-    for nexus_list in [registry.themes, registry.motifs, registry.forms]:
-        for nexus in nexus_list:
-            if nexus.canonical_tag:
-                valid_tags.add(nexus.canonical_tag.lower())
-
-    # Validate all tags in poems
-    all_tags_checked = set()
-    poems_with_invalid = []
-    total_poems_checked = 0
-
-    for poem in cat.index.all_poems:
-        total_poems_checked += 1
-        if poem.tags:
-            invalid_tags_in_poem = []
-            for tag in poem.tags:
-                tag_lower = tag.lower()
-                all_tags_checked.add(tag_lower)
-
-                # Check if tag is invalid (doesn't match any nexus)
-                if tag_lower not in valid_tags:
-                    invalid_tags_in_poem.append(tag)
-
-            # If poem has invalid tags, record it
-            if invalid_tags_in_poem:
-                poems_with_invalid.append(
-                    {
-                        "id": poem.id,
-                        "title": poem.title,
-                        "invalid_tags": invalid_tags_in_poem,
-                        "file_path": str(poem.file_path),
-                    }
-                )
-
-    # Find all unique invalid tags
-    invalid_tags = sorted(all_tags_checked - valid_tags)
-
-    # Determine if validation passed
-    is_valid = len(invalid_tags) == 0
-
-    if is_valid:
-        logger.info(
-            f"✅ Tag validation passed: {total_poems_checked} poems, {len(all_tags_checked)} tags, all valid"
-        )
-    else:
-        logger.warning(
-            f"❌ Tag validation failed: {len(invalid_tags)} invalid tags across {len(poems_with_invalid)} poems"
-        )
-
-    return ValidationResult(
-        success=is_valid,
-        valid=is_valid,
-        invalid_tags=invalid_tags,
-        violations_count=len(invalid_tags),
-        affected_poems=poems_with_invalid,
-        total_poems_checked=total_poems_checked,
-        total_tags_checked=len(all_tags_checked),
-        valid_tags=sorted(valid_tags),
+    return await validate_poem_tags_impl(
+        catalog=get_catalog(),
+        registry=await _get_all_nexuses(),
     )
 
 
@@ -1164,46 +1065,15 @@ async def create_nexus(
         After creating a nexus, sync the catalog to make it available for poem tagging:
         `await get_all_nexuses()` will include the new nexus.
     """
-    # Validate category
-    if category not in ["theme", "motif", "form"]:
-        return NexusOperationResult(
-            success=False,
-            operation="created",
-            error=f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
-        )
-
-    try:
-        manager = get_nexus_manager()
-        nexus = manager.create_nexus(
-            name=name,
-            category=category,
-            canonical_tag=canonical_tag,
-            description=description,
-            custom_template=custom_template,
-        )
-
-        logger.info(f"Created nexus: {nexus.name} ({category})")
-
-        # Refresh nexus registry to include new nexus
-        cat = get_catalog()
-        initialize_enrichment_tools(cat)
-        initialize_similarity_tools(cat, load_nexus_registry(load_config().vault.path))
-        logger.info("Nexus registry refreshed")
-
-        return NexusOperationResult(
-            success=True,
-            nexus=nexus,
-            operation="created",
-            file_path=nexus.file_path,
-        )
-
-    except (OSError, ValueError, RuntimeError) as e:
-        logger.error(f"Failed to create nexus: {e}")
-        return NexusOperationResult(
-            success=False,
-            operation="created",
-            error=str(e),
-        )
+    return await create_nexus_impl(
+        name,
+        category,
+        canonical_tag,
+        description,
+        custom_template,
+        catalog=get_catalog(),
+        nexus_manager=get_nexus_manager(),
+    )
 
 
 @mcp.tool()
@@ -1256,105 +1126,15 @@ async def delete_nexus(
         If cleanup_poems=True, the tag will be removed from all poems,
         which may affect your tagging structure.
     """
-    # Validate category
-    if category not in ["theme", "motif", "form"]:
-        return NexusOperationResult(
-            success=False,
-            operation="deleted",
-            error=f"Invalid category '{category}'. Must be 'theme', 'motif', or 'form'",
-        )
-
-    try:
-        cat = get_catalog()
-        registry = await _get_all_nexuses()
-
-        # Find the nexus to get its canonical_tag
-        nexus_list = {
-            "theme": registry.themes,
-            "motif": registry.motifs,
-            "form": registry.forms,
-        }[category]
-
-        nexus = None
-        for n in nexus_list:
-            if n.name.lower() == name.lower():
-                nexus = n
-                break
-
-        if not nexus:
-            return NexusOperationResult(
-                success=False,
-                operation="deleted",
-                error=f"Nexus '{name}' not found in category '{category}'",
-            )
-
-        poems_cleaned = 0
-        cleanup_errors: list[str] = []
-
-        # Clean up poems if requested
-        if cleanup_poems and nexus.canonical_tag:
-            from .writers.frontmatter_writer import update_poem_tags
-
-            poems_with_tag = cat.index.get_by_tag(nexus.canonical_tag)
-            logger.info(f"Cleaning up {len(poems_with_tag)} poems with tag '{nexus.canonical_tag}'")
-
-            for poem in poems_with_tag:
-                try:
-                    # Remove the tag from the poem's frontmatter. file_path is
-                    # vault-relative, so resolve it against the vault root.
-                    result = update_poem_tags(
-                        cat.vault_root / poem.file_path,
-                        tags_to_remove=[nexus.canonical_tag],
-                        create_backup_file=True,
-                    )
-                    if result.success:
-                        poems_cleaned += 1
-                    else:
-                        msg = f"Failed to remove tag from {poem.title}: {result.error}"
-                        logger.warning(msg)
-                        cleanup_errors.append(msg)
-                except OSError as e:
-                    # A single poem failing must not silently vanish: record it
-                    # so the caller sees partial cleanup instead of false success.
-                    msg = f"Failed to remove tag from {poem.title}: {e}"
-                    logger.warning(msg)
-                    cleanup_errors.append(msg)
-
-            # Resync catalog after tag removals
-            cat.sync(force_rescan=True)
-            logger.info(f"Catalog resynced: {poems_cleaned} cleaned, {len(cleanup_errors)} failed")
-
-        # Delete the nexus file
-        manager = get_nexus_manager()
-        delete_result = manager.delete_nexus(
-            name=name,
-            category=category,
-            force=force,
-        )
-
-        logger.info(f"Deleted nexus: {name} ({category})")
-
-        # Refresh nexus registry to remove deleted nexus
-        initialize_enrichment_tools(cat)
-        initialize_similarity_tools(cat, load_nexus_registry(load_config().vault.path))
-        logger.info("Nexus registry refreshed")
-
-        return NexusOperationResult(
-            success=True,
-            operation="deleted",
-            file_path=delete_result["deleted"],
-            poems_cleaned=poems_cleaned,
-            poems_failed=len(cleanup_errors),
-            cleanup_errors=cleanup_errors,
-        )
-
-    except (OSError, KeyError, RuntimeError) as e:
-        logger.error(f"Failed to delete nexus: {e}")
-        return NexusOperationResult(
-            success=False,
-            operation="deleted",
-            error=str(e),
-        )
+    return await delete_nexus_impl(
+        name,
+        category,
+        cleanup_poems,
+        force,
+        catalog=get_catalog(),
+        registry=await _get_all_nexuses(),
+        nexus_manager=get_nexus_manager(),
+    )
 
 
 # =============================================================================
@@ -1626,9 +1406,8 @@ def _run_startup_tag_validation() -> ValidationResult | None:
     error occurs. Startup must never be blocked by validation, so all failures
     are logged and swallowed rather than raised.
 
-    validate_poem_tags is an @mcp.tool FunctionTool (not directly callable) and
-    returns a ValidationResult model, so this calls `.fn()` and reads the result
-    via attributes.
+    Calls the plain validate_poem_tags_impl directly (never the @mcp.tool
+    wrapper) and reads the ValidationResult via attributes.
     """
     try:
         from .config import get_config
@@ -1638,7 +1417,13 @@ def _run_startup_tag_validation() -> ValidationResult | None:
             return None
 
         logger.info("Running tag validation on startup...")
-        result = asyncio.run(validate_poem_tags.fn())
+
+        async def _validate() -> ValidationResult:
+            return await validate_poem_tags_impl(
+                catalog=get_catalog(), registry=await _get_all_nexuses()
+            )
+
+        result = asyncio.run(_validate())
 
         if result.valid:
             logger.info("✅ Tag validation passed - all tags match nexus definitions")
