@@ -106,7 +106,7 @@ class TestCommitQualityScores:
         }
 
         # Commit scores
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         result = commit_quality_scores_impl(
             poem_id="unscored-poem", scores=scores, notes="Test scoring notes", catalog=catalog
@@ -130,7 +130,7 @@ class TestCommitQualityScores:
         """Test that dimension names are normalized to lowercase."""
         scores = {"DETAIL": 8, "Life": 7, "  Music  ": 6}
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         result = commit_quality_scores_impl(poem_id="unscored-poem", scores=scores, catalog=catalog)
 
@@ -143,7 +143,7 @@ class TestCommitQualityScores:
         """Test that invalid dimension names are rejected."""
         scores = {"invalid_dimension": 8}
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         result = commit_quality_scores_impl(poem_id="unscored-poem", scores=scores, catalog=catalog)
 
@@ -154,7 +154,7 @@ class TestCommitQualityScores:
         """Test that scores outside 0-10 range are rejected."""
         scores = {"detail": 15}
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         result = commit_quality_scores_impl(poem_id="unscored-poem", scores=scores, catalog=catalog)
 
@@ -165,7 +165,7 @@ class TestCommitQualityScores:
         """Test that negative scores are rejected."""
         scores = {"detail": -1}
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         result = commit_quality_scores_impl(poem_id="unscored-poem", scores=scores, catalog=catalog)
 
@@ -176,7 +176,7 @@ class TestCommitQualityScores:
         """Test that non-integer scores are rejected."""
         scores = {"detail": 7.5}
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         result = commit_quality_scores_impl(poem_id="unscored-poem", scores=scores, catalog=catalog)
 
@@ -187,7 +187,7 @@ class TestCommitQualityScores:
         """Test error when poem doesn't exist."""
         scores = {"detail": 8}
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         result = commit_quality_scores_impl(
             poem_id="nonexistent-poem", scores=scores, catalog=catalog
@@ -209,7 +209,7 @@ class TestCommitQualityScores:
             "unity": 10,
         }
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         result = commit_quality_scores_impl(
             poem_id="scored-poem", scores=new_scores, notes="Updated scores", catalog=catalog
@@ -229,7 +229,7 @@ class TestGetQualityScores:
 
     def test_get_scores_for_scored_poem(self, catalog):
         """Test retrieving scores from poem with quality scores."""
-        from poetry_mcp.server import get_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import get_quality_scores_impl
 
         result = get_quality_scores_impl(poem_id="scored-poem", catalog=catalog)
 
@@ -242,7 +242,7 @@ class TestGetQualityScores:
 
     def test_get_scores_for_unscored_poem(self, catalog):
         """Test retrieving scores from poem without quality scores."""
-        from poetry_mcp.server import get_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import get_quality_scores_impl
 
         result = get_quality_scores_impl(poem_id="unscored-poem", catalog=catalog)
 
@@ -254,7 +254,7 @@ class TestGetQualityScores:
 
     def test_get_scores_for_partial_poem(self, catalog):
         """Test retrieving partial scores."""
-        from poetry_mcp.server import get_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import get_quality_scores_impl
 
         result = get_quality_scores_impl(poem_id="partial-scores", catalog=catalog)
 
@@ -266,7 +266,7 @@ class TestGetQualityScores:
 
     def test_get_scores_poem_not_found(self, catalog):
         """Test error when poem doesn't exist."""
-        from poetry_mcp.server import get_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import get_quality_scores_impl
 
         result = get_quality_scores_impl(poem_id="nonexistent-poem", catalog=catalog)
 
@@ -279,7 +279,7 @@ class TestFindHighScoringPoems:
 
     def test_find_by_single_quality(self, catalog):
         """Test finding poems with high score on single dimension."""
-        from poetry_mcp.server import find_high_scoring_poems_impl
+        from poetry_mcp.tools.quality_tools import find_high_scoring_poems_impl
 
         result = find_high_scoring_poems_impl(qualities=["mystery"], min_score=8, catalog=catalog)
 
@@ -290,7 +290,7 @@ class TestFindHighScoringPoems:
 
     def test_find_by_multiple_qualities(self, catalog):
         """Test finding poems with high scores on multiple dimensions."""
-        from poetry_mcp.server import find_high_scoring_poems_impl
+        from poetry_mcp.tools.quality_tools import find_high_scoring_poems_impl
 
         result = find_high_scoring_poems_impl(
             qualities=["detail", "mystery"], min_score=8, catalog=catalog
@@ -303,7 +303,7 @@ class TestFindHighScoringPoems:
 
     def test_find_with_state_filter(self, catalog):
         """Test filtering by poem state."""
-        from poetry_mcp.server import find_high_scoring_poems_impl
+        from poetry_mcp.tools.quality_tools import find_high_scoring_poems_impl
 
         result = find_high_scoring_poems_impl(
             qualities=["detail"], min_score=5, states=["completed"], catalog=catalog
@@ -317,7 +317,7 @@ class TestFindHighScoringPoems:
 
     def test_find_with_limit(self, catalog):
         """Test result limit parameter."""
-        from poetry_mcp.server import find_high_scoring_poems_impl
+        from poetry_mcp.tools.quality_tools import find_high_scoring_poems_impl
 
         result = find_high_scoring_poems_impl(
             qualities=["detail"], min_score=5, limit=1, catalog=catalog
@@ -328,7 +328,7 @@ class TestFindHighScoringPoems:
 
     def test_find_no_matches(self, catalog):
         """Test when no poems meet criteria."""
-        from poetry_mcp.server import find_high_scoring_poems_impl
+        from poetry_mcp.tools.quality_tools import find_high_scoring_poems_impl
 
         result = find_high_scoring_poems_impl(qualities=["detail"], min_score=10, catalog=catalog)
 
@@ -338,7 +338,7 @@ class TestFindHighScoringPoems:
 
     def test_find_invalid_quality_name(self, catalog):
         """Test error with invalid quality dimension."""
-        from poetry_mcp.server import find_high_scoring_poems_impl
+        from poetry_mcp.tools.quality_tools import find_high_scoring_poems_impl
 
         result = find_high_scoring_poems_impl(
             qualities=["invalid_dimension"], min_score=8, catalog=catalog
@@ -369,7 +369,7 @@ Lower scoring poem.
 
         catalog.sync()
 
-        from poetry_mcp.server import find_high_scoring_poems_impl
+        from poetry_mcp.tools.quality_tools import find_high_scoring_poems_impl
 
         result = find_high_scoring_poems_impl(
             qualities=["detail", "mystery"], min_score=5, catalog=catalog
@@ -400,7 +400,7 @@ class TestQualityScoringIntegration:
             "unity": 9,
         }
 
-        from poetry_mcp.server import (
+        from poetry_mcp.tools.quality_tools import (
             commit_quality_scores_impl,
             find_high_scoring_poems_impl,
             get_quality_scores_impl,
@@ -428,7 +428,7 @@ class TestQualityScoringIntegration:
         """Test that catalog is resynced after committing scores."""
         scores = {"detail": 8, "mystery": 9}
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         commit_quality_scores_impl(poem_id="unscored-poem", scores=scores, catalog=catalog)
 
@@ -442,7 +442,7 @@ class TestQualityScoringIntegration:
         """Test that backup files are created before modification."""
         scores = {"detail": 7}
 
-        from poetry_mcp.server import commit_quality_scores_impl
+        from poetry_mcp.tools.quality_tools import commit_quality_scores_impl
 
         commit_quality_scores_impl(poem_id="unscored-poem", scores=scores, catalog=catalog)
 

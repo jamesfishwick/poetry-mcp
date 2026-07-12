@@ -7,7 +7,6 @@ import asyncio
 import logging
 import re
 import sys
-from typing import Any
 
 # Check Python version before any imports
 if sys.version_info < (3, 10):  # noqa: UP036 - friendly message before import-time syntax errors
@@ -90,6 +89,10 @@ from .tools.enrichment_tools import (
 )
 from .tools.enrichment_tools import (
     sync_nexus_tags as _sync_nexus_tags,
+)
+from .tools.quality_tools import (
+    commit_quality_scores_impl,
+    get_quality_scores_impl,
 )
 from .tools.similarity_tools import (
     find_similar_poems as _find_similar_poems,
@@ -663,97 +666,6 @@ async def grade_poem_quality(
     return await _grade_poem_quality(poem_id, dimensions)
 
 
-def commit_quality_scores_impl(
-    poem_id: str,
-    scores: dict,
-    notes: str | None = None,
-    catalog: Any | None = None,
-) -> dict:
-    """
-    Implementation of quality score committing logic.
-
-    Extracted for testability. See commit_quality_scores() for full documentation.
-    """
-    cat = catalog if catalog else get_catalog()
-
-    # Get poem
-    poem = cat.index.get_by_id_or_title(poem_id)
-    if not poem:
-        return {"success": False, "error": f"Poem not found: {poem_id}"}
-
-    # Validate scores
-    valid_dimensions = {
-        "detail",
-        "life",
-        "music",
-        "mystery",
-        "sufficient thought",
-        "surprise",
-        "syntax",
-        "unity",
-    }
-
-    normalized_scores = {}
-    for dimension, score in scores.items():
-        dim_lower = dimension.lower().strip()
-        if dim_lower not in valid_dimensions:
-            return {
-                "success": False,
-                "error": f"Invalid dimension '{dimension}'. Valid: {sorted(valid_dimensions)}",
-            }
-        if not isinstance(score, int) or score < 0 or score > 10:
-            return {
-                "success": False,
-                "error": f"Score for '{dimension}' must be integer 0-10, got: {score}",
-            }
-        normalized_scores[dim_lower] = score
-
-    # Read and update file
-    from pathlib import Path
-
-    from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
-
-    vault_root = Path(cat.vault_root)
-    file_path = vault_root / poem.file_path
-
-    if not file_path.exists():
-        return {"success": False, "error": f"Poem file not found: {file_path}"}
-
-    # Read current content
-    content = file_path.read_text(encoding="utf-8")
-    frontmatter, body = extract_frontmatter(content, file_path)
-
-    # Update qualities
-    frontmatter["qualities"] = normalized_scores
-    if notes:
-        frontmatter["quality_notes"] = notes
-
-    # Write back
-    import yaml
-
-    from poetry_mcp.writers.frontmatter_writer import create_backup
-
-    fm_yaml = yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True)
-    new_content = f"---\n{fm_yaml}---\n{body}"
-
-    # Create backup and write new content
-    create_backup(file_path)
-    file_path.write_text(new_content, encoding="utf-8")
-
-    # Resync catalog
-    cat.sync()
-
-    logger.info(f"Committed quality scores for '{poem.title}': {normalized_scores}")
-
-    return {
-        "success": True,
-        "poem_id": poem.id,
-        "scores_committed": normalized_scores,
-        "notes": notes,
-        "file_path": str(file_path),
-    }
-
-
 @mcp.tool()
 async def commit_quality_scores(
     poem_id: str,
@@ -798,49 +710,7 @@ async def commit_quality_scores(
         )
         ```
     """
-    return commit_quality_scores_impl(poem_id, scores, notes)
-
-
-def get_quality_scores_impl(
-    poem_id: str,
-    catalog: Any | None = None,
-) -> dict:
-    """
-    Implementation of quality score retrieval logic.
-
-    Extracted for testability. See get_quality_scores() for full documentation.
-    """
-    cat = catalog if catalog else get_catalog()
-
-    # Get poem
-    poem = cat.index.get_by_id_or_title(poem_id)
-    if not poem:
-        return {"success": False, "error": f"Poem not found: {poem_id}"}
-
-    scores = poem.qualities if poem.qualities else {}
-
-    # Read quality notes if present
-    from pathlib import Path
-
-    from poetry_mcp.parsers.frontmatter_parser import extract_frontmatter
-
-    vault_root = Path(cat.vault_root)
-    file_path = vault_root / poem.file_path
-
-    notes = None
-    if file_path.exists():
-        content = file_path.read_text(encoding="utf-8")
-        frontmatter, _ = extract_frontmatter(content, file_path)
-        notes = frontmatter.get("quality_notes")
-
-    return {
-        "success": True,
-        "poem_id": poem.id,
-        "poem_title": poem.title,
-        "scores": scores,
-        "notes": notes,
-        "has_scores": len(scores) > 0,
-    }
+    return commit_quality_scores_impl(poem_id, scores, notes, catalog=get_catalog())
 
 
 @mcp.tool()
@@ -869,107 +739,9 @@ async def get_quality_scores(
                 print(f"{dim}: {score}/10")
         ```
     """
-    return get_quality_scores_impl(poem_id)
+    return get_quality_scores_impl(poem_id, catalog=get_catalog())
 
 
-def find_high_scoring_poems_impl(
-    qualities: list[str],
-    min_score: int = 8,
-    states: list[str] | None = None,
-    limit: int = 20,
-    catalog: Any | None = None,
-) -> dict:
-    """
-    Implementation of high-scoring poem finding logic.
-
-    Extracted for testability. See find_high_scoring_poems() for full documentation.
-    """
-    cat = catalog if catalog else get_catalog()
-
-    # Normalize quality names
-    valid_dimensions = {
-        "detail",
-        "life",
-        "music",
-        "mystery",
-        "sufficient thought",
-        "surprise",
-        "syntax",
-        "unity",
-    }
-
-    normalized_qualities = []
-    for q in qualities:
-        q_lower = q.lower().strip()
-        if q_lower not in valid_dimensions:
-            return {
-                "success": False,
-                "error": f"Invalid quality dimension '{q}'. Valid: {sorted(valid_dimensions)}",
-            }
-        normalized_qualities.append(q_lower)
-
-    # Filter poems
-    matching_poems = []
-
-    for poem in cat.index.all_poems:
-        # State filter
-        if states and poem.state not in states:
-            continue
-
-        # Must have quality scores
-        if not poem.qualities:
-            continue
-
-        # Check if poem scores meet threshold on all requested dimensions
-        matches_all = True
-        dimension_scores = {}
-
-        for quality in normalized_qualities:
-            score = poem.qualities.get(quality)
-            if score is None or score < min_score:
-                matches_all = False
-                break
-            dimension_scores[quality] = score
-
-        if matches_all:
-            # Calculate average score across requested dimensions
-            avg_score = sum(dimension_scores.values()) / len(dimension_scores)
-
-            matching_poems.append(
-                {
-                    "id": poem.id,
-                    "title": poem.title,
-                    "state": poem.state,
-                    "form": poem.form,
-                    "scores": dimension_scores,
-                    "avg_score": round(avg_score, 1),
-                    "all_scores": poem.qualities,
-                }
-            )
-
-    # Sort by average score (descending)
-    matching_poems.sort(key=lambda p: p["avg_score"], reverse=True)  # type: ignore[arg-type,return-value]
-
-    # Apply limit
-    limited_poems = matching_poems[:limit]
-
-    logger.info(f"Found {len(matching_poems)} poems scoring {min_score}+ on {normalized_qualities}")
-
-    return {
-        "success": True,
-        "poems": limited_poems,
-        "total_matches": len(matching_poems),
-        "returned": len(limited_poems),
-        "query": {
-            "qualities": normalized_qualities,
-            "min_score": min_score,
-            "states": states,
-            "limit": limit,
-        },
-    }
-
-
-# ============================================================================
 # Submission Management Tools
 # ============================================================================
 
