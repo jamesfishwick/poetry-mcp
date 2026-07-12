@@ -110,8 +110,12 @@ from .tools.submission_tools import (
     sync_submissions_impl,
     update_submission_status_impl,
 )
-from .utils import slugify_filename
-from .writers.venue_writer import VenueWriter
+from .tools.venue_tools import (
+    get_venue_impl,
+    list_venues_impl,
+    regenerate_venue_file_impl,
+    sync_venues_impl,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -818,18 +822,7 @@ async def sync_venues(force_rescan: bool = False) -> SyncVenuesResult:
         print(f"Loaded {result.total_venues} venues")
         ```
     """
-    logger.info(f"Syncing venues (force_rescan={force_rescan})...")
-    ven_cat = get_venue_catalog()
-    result = ven_cat.sync(force_rescan=force_rescan)
-    logger.info(f"Venue sync complete: {result['total_venues']} venues")
-
-    return SyncVenuesResult(
-        success=True,
-        total_venues=result["total_venues"],
-        new_venues=result["new_venues"],
-        errors=result["errors"],
-        duration_seconds=result["duration_seconds"],
-    )
+    return await sync_venues_impl(force_rescan, ven_cat=get_venue_catalog())
 
 
 @mcp.tool()
@@ -860,21 +853,10 @@ async def list_venues(
         result = await list_venues(simultaneous_filter=True)
         ```
     """
-    ven_cat = get_venue_catalog()
-
-    venues = ven_cat.filter_venues(
-        payment_filter=payment_filter,
-        simultaneous_filter=simultaneous_filter,
-    )
-
-    return VenueListResult(
-        success=True,
-        venues=venues,
-        total_count=len(venues),
-        filters_applied={
-            "payment": payment_filter,
-            "simultaneous": simultaneous_filter,
-        },
+    return await list_venues_impl(
+        payment_filter,
+        simultaneous_filter,
+        ven_cat=get_venue_catalog(),
     )
 
 
@@ -901,24 +883,10 @@ async def get_venue(venue_name: str) -> VenueDetailResult:
             print(f"Total submissions: {len(result.submissions)}")
         ```
     """
-    ven_cat = get_venue_catalog()
-    sub_cat = get_submission_catalog()
-
-    # Get venue metadata
-    venue = ven_cat.get_by_name(venue_name)
-    if not venue:
-        return VenueDetailResult(
-            success=False,
-            error=f"Venue not found: {venue_name}",
-        )
-
-    # Get submissions for this venue
-    submissions = sub_cat.get_by_venue(venue_name)
-
-    return VenueDetailResult(
-        success=True,
-        venue=venue,
-        submissions=submissions,
+    return await get_venue_impl(
+        venue_name,
+        ven_cat=get_venue_catalog(),
+        sub_cat=get_submission_catalog(),
     )
 
 
@@ -948,38 +916,10 @@ async def regenerate_venue_file(venue_name: str) -> RegenerateVenueResult:
             print(f"Regenerated: {result.file_path}")
         ```
     """
-    ven_cat = get_venue_catalog()
-    sub_cat = get_submission_catalog()
-    config = load_config()
-
-    # Get venue metadata
-    venue = ven_cat.get_by_name(venue_name)
-    if not venue:
-        return RegenerateVenueResult(
-            success=False,
-            venue_name=venue_name,
-            file_path="",
-            submissions_count=0,
-            error=f"Venue not found: {venue_name}",
-        )
-
-    # Get submissions
-    submissions = sub_cat.get_by_venue(venue_name)
-
-    # Generate file
-    venues_dir = config.vault.path / config.vault.venues_dir
-    output_path = venues_dir / f"{slugify_filename(venue_name)}.md"
-
-    writer = VenueWriter()
-    writer.generate_venue_file(venue, submissions, output_path)
-
-    logger.info(f"Regenerated venue file: {output_path}")
-
-    return RegenerateVenueResult(
-        success=True,
-        venue_name=venue_name,
-        file_path=str(output_path),
-        submissions_count=len(submissions),
+    return await regenerate_venue_file_impl(
+        venue_name,
+        ven_cat=get_venue_catalog(),
+        sub_cat=get_submission_catalog(),
     )
 
 
