@@ -42,6 +42,12 @@ from .models.results import (
 )
 from .models.submission import SubmissionStatus, SubmissionSummary
 from .parsers.nexus_parser import load_nexus_registry
+from .tools.catalog_tools import (
+    get_poem_impl,
+    get_server_info_impl,
+    query_poems_impl,
+    sync_catalog_impl,
+)
 from .tools.chain_tools import (
     add_poems_to_chain as _add_poems_to_chain,
 )
@@ -196,11 +202,7 @@ async def sync_catalog(force_rescan: bool = False) -> SyncResult:
     Returns:
         SyncResult with statistics about the sync operation
     """
-    logger.info(f"Syncing catalog (force_rescan={force_rescan})...")
-    cat = get_catalog()
-    result = cat.sync(force_rescan=force_rescan)
-    logger.info(f"Sync complete: {result.total_poems} poems")
-    return result
+    return await sync_catalog_impl(force_rescan, catalog=get_catalog())
 
 
 @mcp.tool()
@@ -215,18 +217,7 @@ async def get_poem(identifier: str, include_content: bool = True) -> Poem | None
     Returns:
         Poem object or None if not found
     """
-    cat = get_catalog()
-
-    # Get poem by ID or title
-    poem = cat.index.get_by_id_or_title(identifier.lower())
-
-    if poem and not include_content:
-        # Return copy without content
-        poem_dict = poem.model_dump()
-        poem_dict["content"] = None
-        poem = Poem(**poem_dict)
-
-    return poem
+    return await get_poem_impl(identifier, include_content, catalog=get_catalog())
 
 
 @mcp.tool()
@@ -237,20 +228,7 @@ async def get_server_info() -> ServerInfo:
     Returns:
         ServerInfo with server metadata and catalog statistics
     """
-    config = load_config()
-    cat = get_catalog()
-    stats = cat.get_stats()
-
-    return ServerInfo(
-        server_name="poetry-mcp",
-        version="0.1.0",
-        config={
-            "vault_path": str(config.vault.path),
-            "catalog_dir": config.vault.catalog_dir,
-            "nexus_dir": config.vault.nexus_dir,
-        },
-        catalog_stats=stats,
-    )
+    return await get_server_info_impl(catalog=get_catalog())
 
 
 @mcp.tool()
@@ -320,112 +298,20 @@ async def query_poems(
         await query_poems(chain_id="water-sequence", sort_by="chain_position")
         ```
     """
-    import time
-
-    start_time = time.perf_counter()
-    cat = get_catalog()
-    config = load_config()
-
-    # Use config default for limit
-    if limit is None:
-        limit = config.search.default_limit
-
-    # Start with text search or all poems
-    if query:
-        results = cat.index.search_content(query, case_sensitive=config.search.case_sensitive)
-    else:
-        results = cat.index.all_poems.copy()
-
-    # Apply state filter
-    if states:
-        results = [p for p in results if p.state in states]
-
-    # Apply form filter
-    if forms:
-        results = [p for p in results if p.form in forms]
-
-    # Apply tag filter with match mode
-    if tags:
-        if tag_match_mode == "all":
-            # Must have all tags
-            results = [
-                p
-                for p in results
-                if all(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
-            ]
-        elif tag_match_mode == "any":
-            # Must have at least one tag
-            results = [
-                p
-                for p in results
-                if any(tag.lower() in [t.lower() for t in p.tags] for tag in tags)
-            ]
-
-    # Apply chain filter
-    if chain_id:
-        normalized_chain = chain_id.lower().strip().replace(" ", "-")
-        chain_poem_ids = set(cat.index.by_chain.get(normalized_chain, []))
-        results = [p for p in results if p.id in chain_poem_ids]
-
-    # Apply quality score filter
-    if min_quality_score is not None and quality_dimensions:
-        filtered_results = []
-        for poem in results:
-            if not poem.quality or not poem.quality.scores:
-                continue
-
-            # Check if poem meets threshold on ALL specified dimensions
-            meets_threshold = True
-            for dim in quality_dimensions:
-                dim_lower = dim.lower().strip()
-                score = poem.quality.scores.get(dim_lower)
-                if score is None or score < min_quality_score:
-                    meets_threshold = False
-                    break
-
-            if meets_threshold:
-                filtered_results.append(poem)
-
-        results = filtered_results
-
-    # Sort results
-    if sort_by == "title":
-        results.sort(key=lambda p: p.title.lower())
-    elif sort_by == "created_at":
-        results.sort(key=lambda p: p.created_at, reverse=True)
-    elif sort_by == "updated_at":
-        results.sort(key=lambda p: p.updated_at, reverse=True)
-    elif sort_by == "word_count":
-        results.sort(key=lambda p: p.word_count, reverse=True)
-    elif sort_by == "chain_position" and chain_id:
-        # Sort by position in chain (ordered poems first, then loose by title)
-        normalized_chain = chain_id.lower().strip().replace(" ", "-")
-
-        def chain_sort_key(poem: Poem) -> tuple:
-            if poem.chain_positions and normalized_chain in poem.chain_positions:
-                return (0, poem.chain_positions[normalized_chain], "")
-            return (1, 0, poem.title.lower())
-
-        results.sort(key=chain_sort_key)
-    elif sort_by == "relevance" and tags:
-        # Sort by tag match relevance
-        def relevance_score(poem: Poem) -> int:
-            return sum(1 for tag in tags if tag.lower() in [t.lower() for t in poem.tags])
-
-        results.sort(key=relevance_score, reverse=True)
-    # else: keep original order for relevance without tags
-
-    # Limit results
-    total_matches = len(results)
-    results = results[:limit]
-
-    # Remove content if not requested
-    if not include_content:
-        results = [Poem(**{**p.model_dump(), "content": None}) for p in results]
-
-    query_time_ms = (time.perf_counter() - start_time) * 1000
-
-    return SearchResult(poems=results, total_matches=total_matches, query_time_ms=query_time_ms)
+    return await query_poems_impl(
+        query,
+        states,
+        forms,
+        tags,
+        tag_match_mode,
+        chain_id,
+        min_quality_score,
+        quality_dimensions,
+        sort_by,
+        limit,
+        include_content,
+        catalog=get_catalog(),
+    )
 
 
 # ===== Enrichment Tools =====
