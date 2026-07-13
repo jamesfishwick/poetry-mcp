@@ -207,7 +207,8 @@ mypy src/
 ```
 src/poetry_mcp/
 ├── __init__.py          # Package metadata
-├── server.py            # FastMCP server (8 core tools, 61% coverage)
+├── server.py            # Thin @mcp.tool wrappers + main() + catalog getters
+├── utils.py             # Shared helpers (e.g. slugify_filename)
 ├── config.py            # Configuration management (51% coverage)
 ├── errors.py            # Custom exceptions (100% coverage)
 ├── models/              # Pydantic data models (90-100% coverage)
@@ -227,8 +228,15 @@ src/poetry_mcp/
 │   └── frontmatter_writer.py  # Atomic updates (100% coverage)
 ├── catalog/             # Catalog management and indexing
 │   └── catalog.py       # Main catalog class with search
-└── tools/               # MCP tool implementations
-    └── enrichment_tools.py  # All enrichment operations (90% coverage)
+└── tools/               # Tool impls (server.py wraps these) — see docs/ARCHITECTURE.md
+    ├── catalog_tools.py     # sync_catalog, get_poem, query_poems, get_server_info
+    ├── submission_tools.py  # sync/list/update submissions
+    ├── venue_tools.py       # sync/list/get/regenerate venues
+    ├── nexus_tools.py       # refresh/validate/create/delete nexus
+    ├── quality_tools.py     # commit/get quality scores
+    ├── enrichment_tools.py  # nexus enrichment + tag operations
+    ├── chain_tools.py       # poem chains
+    └── similarity_tools.py  # find_similar_poems
 
 tests/                   # 343 tests, 100% pass rate
 ├── conftest.py          # Pytest fixtures and helpers
@@ -243,7 +251,7 @@ tests/                   # 343 tests, 100% pass rate
 └── fixtures/            # Test data and sample poems
 
 docs/
-├── CANONICAL_TAGS.md         # Canonical tag reference
+├── ARCHITECTURE.md           # Tool/server layering + conventions (read before editing tools)
 ├── FRONTMATTER_SCHEMA.md     # Frontmatter property definitions
 ├── IMPLEMENTATION_CHECKLIST.md  # Development progress tracking
 └── TEST_STATUS.md            # Test suite status and coverage
