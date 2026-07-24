@@ -98,24 +98,43 @@ class CatalogIndex:
         if self.by_title.get(title_key) is poem:
             del self.by_title[title_key]
 
-        # Secondary indices (remove by identity)
+        # Secondary indices (remove by identity). Drop the key entirely when it
+        # empties, so listing/stats surfaces (get_all_chains, get_stats) never
+        # report a zero-count phantom state/form/chain.
         state_poems = self.by_state.get(poem.state)
         if state_poems:
-            self.by_state[poem.state] = [p for p in state_poems if p is not poem]
+            remaining = [p for p in state_poems if p is not poem]
+            if remaining:
+                self.by_state[poem.state] = remaining
+            else:
+                del self.by_state[poem.state]
         form_poems = self.by_form.get(poem.form)
         if form_poems:
-            self.by_form[poem.form] = [p for p in form_poems if p is not poem]
+            remaining = [p for p in form_poems if p is not poem]
+            if remaining:
+                self.by_form[poem.form] = remaining
+            else:
+                del self.by_form[poem.form]
 
-        # Tag index
+        # Tag index (tag -> set of poem IDs; keyed by ID, not identity)
         for tag in poem.tags:
-            self.by_tag.get(tag.lower(), set()).discard(poem.id)
+            key = tag.lower()
+            tag_ids = self.by_tag.get(key)
+            if tag_ids:
+                tag_ids.discard(poem.id)
+                if not tag_ids:
+                    del self.by_tag[key]
 
         # Chain index (remove all occurrences of this poem's ID)
         for chain_id in poem.chains:
             key = chain_id.lower()
             chain_ids = self.by_chain.get(key)
             if chain_ids:
-                self.by_chain[key] = [pid for pid in chain_ids if pid != poem.id]
+                remaining_ids = [pid for pid in chain_ids if pid != poem.id]
+                if remaining_ids:
+                    self.by_chain[key] = remaining_ids
+                else:
+                    del self.by_chain[key]
 
         # All poems (remove by identity)
         self.all_poems = [p for p in self.all_poems if p is not poem]
@@ -408,14 +427,24 @@ class Catalog:
                 # Check if poem already exists
                 existing = self.index.get_by_id(poem.id)
                 if existing:
-                    # Check if updated (don't actually need to track this for now)
-                    # Just always add the new version
-                    if not force_rescan:
+                    # A DIFFERENT file resolving to the same ID is a collision, not
+                    # a re-parse: add_poem will evict the earlier poem and it becomes
+                    # unreachable. Surface it instead of silently dropping a poem.
+                    # (Same file re-parsed on re-sync has a matching path: stay quiet.)
+                    if existing.file_path != poem.file_path:
+                        warning_msg = (
+                            f"ID collision: '{poem.id}' from {poem.file_path} shadows "
+                            f"{existing.file_path}; only one is reachable. Rename one file "
+                            f"(e.g. add a distinct title or number prefix)."
+                        )
+                        warnings.append(warning_msg)
+                        logger.warning(warning_msg)
+                    elif not force_rescan:
                         updated_poems += 1
                 else:
                     new_poems += 1
 
-                # Always add the poem (will overwrite if exists)
+                # Always add the poem (evicts any prior version with this ID)
                 self.index.add_poem(poem)
 
             except FrontmatterParseError as e:

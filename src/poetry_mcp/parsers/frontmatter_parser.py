@@ -181,20 +181,22 @@ def generate_poem_id(file_path: Path) -> str:
     Generate poem ID from filename.
 
     Slugifies the full filename stem (lowercase, single dashes). The leading
-    ordering prefix is kept deliberately: many poems share a title (e.g. ten
-    different "Note @ Charlottesville, Virginia" drafts), so stripping the
-    "NNN - " prefix would collapse them onto one ID and make all but one
-    unreachable. Keeping the prefix gives each file a distinct ID
+    ordering prefix is kept deliberately: several drafts can share a title, so
+    stripping the "NNN - " prefix would collapse them onto one ID and make all
+    but one unreachable. Keeping the prefix gives each file a distinct ID
     ("055-note-charlottesville-virginia" vs "065-note-...").
 
-    IDs are derived fresh on every sync and are never persisted, so this
-    scheme can change without any vault migration.
+    IDs are always recomputed from the filename on every sync (any `id:` in
+    frontmatter is ignored) and are never written back to disk, so this scheme
+    can change without any vault migration. Distinct files that still slug to
+    the same ID are a collision the caller must surface; see Catalog.sync.
 
     Args:
         file_path: Path to poem file
 
     Returns:
-        Normalized poem ID (falls back to "untitled" for empty stems)
+        Normalized poem ID (falls back to "untitled" when the stem has no
+        alphanumeric characters)
     """
     # Lowercase the full stem and collapse any run of non-alphanumeric
     # characters (spaces, punctuation, existing dashes) into a single dash.

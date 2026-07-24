@@ -107,6 +107,54 @@ class TestCatalogIndex:
         assert index.get_by_title("water poem") is None
         assert index.get_by_title("renamed water") == updated
 
+    def test_add_poem_idempotent_for_chains(self, sample_poems):
+        """by_chain is a list index: re-adding must not append a duplicate ID."""
+        index = CatalogIndex()
+        chained = sample_poems[0].model_copy(update={"chains": ["seq-a"]})
+
+        index.add_poem(chained)
+        index.add_poem(chained)  # re-add, as a repeated sync would
+
+        assert index.by_chain["seq-a"] == [chained.id]
+        assert index.get_all_chains() == {"seq-a": 1}
+
+    def test_re_add_with_changed_chains_leaves_no_phantom(self, sample_poems):
+        """Re-adding with a different chain drops the old key, not just its members."""
+        index = CatalogIndex()
+        index.add_poem(sample_poems[0].model_copy(update={"chains": ["seq-a"]}))
+
+        moved = sample_poems[0].model_copy(update={"chains": ["seq-b"]})
+        index.add_poem(moved)
+
+        assert index.get_by_chain("seq-a") == []
+        assert index.get_by_chain("seq-b") == [moved]
+        # The emptied chain must be gone entirely, not linger as a 0-count phantom.
+        assert "seq-a" not in index.get_all_chains()
+        assert index.get_all_chains() == {"seq-b": 1}
+
+    def test_remove_poem_preserves_shared_attributes(self, sample_poems):
+        """remove_poem must not evict a sibling that shares a chain, state, or form."""
+        index = CatalogIndex()
+        a = sample_poems[0].model_copy(update={"chains": ["shared"], "tags": ["t"]})
+        b = sample_poems[1].model_copy(
+            update={"state": a.state, "form": a.form, "chains": ["shared"], "tags": ["t"]}
+        )
+        index.add_poem(a)
+        index.add_poem(b)
+
+        index.remove_poem(a)
+
+        # a is gone from every index...
+        assert index.get_by_id(a.id) is None
+        assert a not in index.all_poems
+        assert a not in index.get_by_state(a.state)
+        # ...but b, which shared state/form/chain/tag, is fully intact.
+        assert index.get_by_id(b.id) is b
+        assert index.get_by_state(b.state) == [b]
+        assert index.get_by_form(b.form) == [b]
+        assert index.get_by_chain("shared") == [b]
+        assert index.get_by_tag("t") == [b]
+
     def test_get_by_title_case_insensitive(self, sample_poems):
         """Test title lookup is case-insensitive."""
         index = CatalogIndex()
@@ -377,6 +425,26 @@ Unfinished work"""
         assert result.skipped_poems == 0
         assert len(result.warnings) == 0
         assert catalog.last_sync is not None
+
+    def test_sync_warns_on_id_collision(self, tmp_path):
+        """Two files that slug to the same ID must warn, not silently drop one."""
+        catalog_dir = tmp_path / "vault" / "catalog"
+        (catalog_dir / "completed").mkdir(parents=True)
+        (catalog_dir / "fledgeling").mkdir()
+        # Same stem in two folders -> same generated ID -> collision.
+        body = "---\nstate: {s}\nform: free_verse\n---\n\n# Untitled\n\n{t}"
+        (catalog_dir / "completed" / "Untitled.md").write_text(body.format(s="completed", t="one"))
+        (catalog_dir / "fledgeling" / "Untitled.md").write_text(
+            body.format(s="fledgeling", t="two")
+        )
+
+        result = Catalog(vault_root=tmp_path / "vault").sync()
+
+        # Only one poem is reachable, and the loss is reported rather than swallowed.
+        assert result.total_poems == 1
+        collisions = [w for w in result.warnings if "ID collision" in w]
+        assert len(collisions) == 1
+        assert "untitled" in collisions[0]
 
     def test_sync_respects_exclude_dirs(self, vault_with_poems):
         """Test sync() excludes specified directories."""
