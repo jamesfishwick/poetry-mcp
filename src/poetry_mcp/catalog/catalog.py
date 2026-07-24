@@ -417,6 +417,18 @@ class Catalog:
             f"Found {len(markdown_files)} markdown files (excluded {len(all_markdown_files) - len(markdown_files)} from excluded directories)"
         )
 
+        # Sort for a deterministic scan order. rglob order is filesystem-dependent,
+        # so without this the survivor of an ID collision (below) could flip between
+        # runs with no file change.
+        markdown_files.sort()
+
+        # id -> file_path of poems added in THIS pass. Collision detection compares
+        # against this, not the persistent index: two different files sharing an id
+        # within one scan is a real collision, whereas a stale prior-location entry
+        # left in the index from a poem that has since MOVED is not (that entry is
+        # absent from the current pass and add_poem harmlessly evicts it).
+        seen_this_sync: dict[str, str] = {}
+
         # Parse each file
         for md_file in markdown_files:
             try:
@@ -424,26 +436,25 @@ class Catalog:
                     md_file, self.vault_root, folder_state_map=self.folder_state_map
                 )
 
-                # Check if poem already exists
-                existing = self.index.get_by_id(poem.id)
-                if existing:
-                    # A DIFFERENT file resolving to the same ID is a collision, not
-                    # a re-parse: add_poem will evict the earlier poem and it becomes
-                    # unreachable. Surface it instead of silently dropping a poem.
-                    # (Same file re-parsed on re-sync has a matching path: stay quiet.)
-                    if existing.file_path != poem.file_path:
-                        warning_msg = (
-                            f"ID collision: '{poem.id}' from {poem.file_path} shadows "
-                            f"{existing.file_path}; only one is reachable. Rename one file "
-                            f"(e.g. add a distinct title or number prefix)."
-                        )
-                        warnings.append(warning_msg)
-                        logger.warning(warning_msg)
-                    elif not force_rescan:
-                        updated_poems += 1
+                prior_path = seen_this_sync.get(poem.id)
+                if prior_path is not None and prior_path != poem.file_path:
+                    # Two distinct files in this scan resolve to the same id: add_poem
+                    # will evict the earlier one and it becomes unreachable. Surface it
+                    # instead of silently dropping a poem.
+                    warning_msg = (
+                        f"ID collision: '{poem.id}' from {poem.file_path} shadows "
+                        f"{prior_path}, only one is reachable. Rename one file "
+                        f"(e.g. add a distinct title or number prefix)."
+                    )
+                    warnings.append(warning_msg)
+                    logger.warning(warning_msg)
+                elif self.index.get_by_id(poem.id) and not force_rescan:
+                    # Same id already in the index from a prior sync (re-parse or move).
+                    updated_poems += 1
                 else:
                     new_poems += 1
 
+                seen_this_sync[poem.id] = poem.file_path
                 # Always add the poem (evicts any prior version with this ID)
                 self.index.add_poem(poem)
 

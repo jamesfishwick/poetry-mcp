@@ -446,6 +446,39 @@ Unfinished work"""
         assert len(collisions) == 1
         assert "untitled" in collisions[0]
 
+    def test_second_nonforce_sync_of_unchanged_file_is_quiet(self, vault_with_poems):
+        """Re-syncing unchanged files (no force) must not warn or double-count."""
+        catalog = Catalog(vault_root=vault_with_poems)
+        catalog.sync()
+
+        result = catalog.sync()  # second pass, force_rescan=False, index NOT cleared
+
+        assert result.warnings == []
+        assert result.new_poems == 0
+        assert result.updated_poems == result.total_poems
+
+    def test_moving_a_file_between_folders_does_not_warn(self, tmp_path):
+        """A file that moved (same stem, new folder) is not a collision on re-sync."""
+        catalog_dir = tmp_path / "vault" / "catalog"
+        (catalog_dir / "fledgeling").mkdir(parents=True)
+        (catalog_dir / "completed").mkdir()
+        body = "---\nstate: {s}\nform: free_verse\n---\n\n# Drift\n\nsnow"
+        src = catalog_dir / "fledgeling" / "Drift.md"
+        src.write_text(body.format(s="fledgeling"))
+
+        catalog = Catalog(vault_root=tmp_path / "vault")
+        catalog.sync()
+
+        # Simulate the poem maturing: move it to a different state folder (same stem).
+        src.rename(catalog_dir / "completed" / "Drift.md")
+        result = catalog.sync()  # non-force: stale fledgeling entry still indexed
+
+        # The stale prior-location entry must not be mistaken for a rival file.
+        assert [w for w in result.warnings if "ID collision" in w] == []
+        assert result.total_poems == 1
+        # The surviving entry tracks the file's new location, not the stale one.
+        assert "completed" in catalog.index.get_by_id("drift").file_path
+
     def test_sync_respects_exclude_dirs(self, vault_with_poems):
         """Test sync() excludes specified directories."""
         catalog = Catalog(vault_root=vault_with_poems, exclude_dirs=["fledgeling"])
