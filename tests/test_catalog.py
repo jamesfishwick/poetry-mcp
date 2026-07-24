@@ -71,6 +71,42 @@ class TestCatalogIndex:
         assert index.get_by_id("poem2") == sample_poems[1]
         assert index.get_by_id("nonexistent") is None
 
+    def test_add_poem_is_idempotent(self, sample_poems):
+        """Re-adding poems must not accumulate duplicates in any index."""
+        index = CatalogIndex()
+
+        # Add every poem twice, as a repeated sync would
+        for _ in range(2):
+            for poem in sample_poems:
+                index.add_poem(poem)
+
+        assert len(index.all_poems) == len(sample_poems)
+        assert len(index.by_id) == len(sample_poems)
+        # List-based indices must stay consistent with all_poems
+        assert sum(len(v) for v in index.by_state.values()) == len(sample_poems)
+        assert sum(len(v) for v in index.by_form.values()) == len(sample_poems)
+        assert index.get_by_state("completed") == [sample_poems[0], sample_poems[1]]
+
+    def test_add_poem_replaces_updated_version(self, sample_poems):
+        """Re-adding the same ID with new attributes replaces it everywhere."""
+        index = CatalogIndex()
+        index.add_poem(sample_poems[0])
+
+        updated = sample_poems[0].model_copy(
+            update={"title": "Renamed Water", "state": "fledgeling", "tags": ["ocean"]}
+        )
+        index.add_poem(updated)
+
+        assert len(index.all_poems) == 1
+        assert index.get_by_id("poem1").title == "Renamed Water"
+        # Stale secondary-index entries are gone
+        assert index.get_by_state("completed") == []
+        assert index.get_by_state("fledgeling") == [updated]
+        assert index.get_by_tag("water") == []
+        assert index.get_by_tag("ocean") == [updated]
+        assert index.get_by_title("water poem") is None
+        assert index.get_by_title("renamed water") == updated
+
     def test_get_by_title_case_insensitive(self, sample_poems):
         """Test title lookup is case-insensitive."""
         index = CatalogIndex()

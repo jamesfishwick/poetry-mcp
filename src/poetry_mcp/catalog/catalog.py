@@ -49,11 +49,19 @@ class CatalogIndex:
 
     def add_poem(self, poem: Poem) -> None:
         """
-        Add a poem to all indices.
+        Add a poem to all indices, replacing any existing poem with the same ID.
+
+        Idempotent: re-adding a poem (e.g. on a subsequent sync) evicts the
+        previous version from every index first, so repeated syncs don't
+        accumulate duplicates in the list-based indices.
 
         Args:
             poem: Poem to index
         """
+        # Evict any prior version so list/set indices don't accumulate duplicates
+        if poem.id in self.by_id:
+            self.remove_poem(self.by_id[poem.id])
+
         # Primary indices
         self.by_id[poem.id] = poem
         self.by_title[poem.title.lower()] = poem
@@ -72,6 +80,45 @@ class CatalogIndex:
 
         # All poems
         self.all_poems.append(poem)
+
+    def remove_poem(self, poem: Poem) -> None:
+        """
+        Remove a poem from all indices.
+
+        Removes list/set entries by identity/ID so it is safe to call even when
+        other poems share a title, state, form, or tag.
+
+        Args:
+            poem: The indexed poem instance to remove
+        """
+        # Primary indices (only clear title/id if they still point at this poem)
+        if self.by_id.get(poem.id) is poem:
+            del self.by_id[poem.id]
+        title_key = poem.title.lower()
+        if self.by_title.get(title_key) is poem:
+            del self.by_title[title_key]
+
+        # Secondary indices (remove by identity)
+        state_poems = self.by_state.get(poem.state)
+        if state_poems:
+            self.by_state[poem.state] = [p for p in state_poems if p is not poem]
+        form_poems = self.by_form.get(poem.form)
+        if form_poems:
+            self.by_form[poem.form] = [p for p in form_poems if p is not poem]
+
+        # Tag index
+        for tag in poem.tags:
+            self.by_tag.get(tag.lower(), set()).discard(poem.id)
+
+        # Chain index (remove all occurrences of this poem's ID)
+        for chain_id in poem.chains:
+            key = chain_id.lower()
+            chain_ids = self.by_chain.get(key)
+            if chain_ids:
+                self.by_chain[key] = [pid for pid in chain_ids if pid != poem.id]
+
+        # All poems (remove by identity)
+        self.all_poems = [p for p in self.all_poems if p is not poem]
 
     def get_by_id(self, poem_id: str) -> Poem | None:
         """Get poem by ID (O(1) lookup)."""
