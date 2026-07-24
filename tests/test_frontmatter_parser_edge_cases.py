@@ -8,8 +8,28 @@ from poetry_mcp.errors import FrontmatterParseError
 from poetry_mcp.parsers.frontmatter_parser import (
     estimate_syllables,
     extract_frontmatter,
+    generate_poem_id,
     parse_poem_file,
 )
+
+
+class TestGeneratePoemId:
+    """Poem IDs are slugged from the full filename stem."""
+
+    def test_keeps_ordering_prefix_to_disambiguate_shared_titles(self):
+        # Two files sharing a title but differing by prefix must get distinct IDs.
+        a = generate_poem_id(Path("055 - Note @ Charlottesville, Virginia.md"))
+        b = generate_poem_id(Path("065 - Note @ Charlottesville, Virginia.md"))
+        assert a == "055-note-charlottesville-virginia"
+        assert b == "065-note-charlottesville-virginia"
+        assert a != b
+
+    def test_collapses_punctuation_runs_into_single_dash(self):
+        assert generate_poem_id(Path("Water Poem.md")) == "water-poem"
+        assert generate_poem_id(Path("04 - others.md")) == "04-others"
+
+    def test_empty_stem_falls_back_to_untitled(self):
+        assert generate_poem_id(Path("!!!.md")) == "untitled"
 
 
 @pytest.fixture
