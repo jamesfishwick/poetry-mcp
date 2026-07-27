@@ -49,11 +49,19 @@ class CatalogIndex:
 
     def add_poem(self, poem: Poem) -> None:
         """
-        Add a poem to all indices.
+        Add a poem to all indices, replacing any existing poem with the same ID.
+
+        Idempotent: re-adding a poem (e.g. on a subsequent sync) evicts the
+        previous version from every index first, so repeated syncs don't
+        accumulate duplicates in the list-based indices.
 
         Args:
             poem: Poem to index
         """
+        # Evict any prior version so list/set indices don't accumulate duplicates
+        if poem.id in self.by_id:
+            self.remove_poem(self.by_id[poem.id])
+
         # Primary indices
         self.by_id[poem.id] = poem
         self.by_title[poem.title.lower()] = poem
@@ -72,6 +80,64 @@ class CatalogIndex:
 
         # All poems
         self.all_poems.append(poem)
+
+    def remove_poem(self, poem: Poem) -> None:
+        """
+        Remove a poem from all indices.
+
+        Removes list/set entries by identity/ID so it is safe to call even when
+        other poems share a title, state, form, or tag.
+
+        Args:
+            poem: The indexed poem instance to remove
+        """
+        # Primary indices (only clear title/id if they still point at this poem)
+        if self.by_id.get(poem.id) is poem:
+            del self.by_id[poem.id]
+        title_key = poem.title.lower()
+        if self.by_title.get(title_key) is poem:
+            del self.by_title[title_key]
+
+        # Secondary indices (remove by identity). Drop the key entirely when it
+        # empties, so listing/stats surfaces (get_all_chains, get_stats) never
+        # report a zero-count phantom state/form/chain.
+        state_poems = self.by_state.get(poem.state)
+        if state_poems:
+            remaining = [p for p in state_poems if p is not poem]
+            if remaining:
+                self.by_state[poem.state] = remaining
+            else:
+                del self.by_state[poem.state]
+        form_poems = self.by_form.get(poem.form)
+        if form_poems:
+            remaining = [p for p in form_poems if p is not poem]
+            if remaining:
+                self.by_form[poem.form] = remaining
+            else:
+                del self.by_form[poem.form]
+
+        # Tag index (tag -> set of poem IDs; keyed by ID, not identity)
+        for tag in poem.tags:
+            key = tag.lower()
+            tag_ids = self.by_tag.get(key)
+            if tag_ids:
+                tag_ids.discard(poem.id)
+                if not tag_ids:
+                    del self.by_tag[key]
+
+        # Chain index (remove all occurrences of this poem's ID)
+        for chain_id in poem.chains:
+            key = chain_id.lower()
+            chain_ids = self.by_chain.get(key)
+            if chain_ids:
+                remaining_ids = [pid for pid in chain_ids if pid != poem.id]
+                if remaining_ids:
+                    self.by_chain[key] = remaining_ids
+                else:
+                    del self.by_chain[key]
+
+        # All poems (remove by identity)
+        self.all_poems = [p for p in self.all_poems if p is not poem]
 
     def get_by_id(self, poem_id: str) -> Poem | None:
         """Get poem by ID (O(1) lookup)."""
@@ -351,6 +417,18 @@ class Catalog:
             f"Found {len(markdown_files)} markdown files (excluded {len(all_markdown_files) - len(markdown_files)} from excluded directories)"
         )
 
+        # Sort for a deterministic scan order. rglob order is filesystem-dependent,
+        # so without this the survivor of an ID collision (below) could flip between
+        # runs with no file change.
+        markdown_files.sort()
+
+        # id -> file_path of poems added in THIS pass. Collision detection compares
+        # against this, not the persistent index: two different files sharing an id
+        # within one scan is a real collision, whereas a stale prior-location entry
+        # left in the index from a poem that has since MOVED is not (that entry is
+        # absent from the current pass and add_poem harmlessly evicts it).
+        seen_this_sync: dict[str, str] = {}
+
         # Parse each file
         for md_file in markdown_files:
             try:
@@ -358,17 +436,26 @@ class Catalog:
                     md_file, self.vault_root, folder_state_map=self.folder_state_map
                 )
 
-                # Check if poem already exists
-                existing = self.index.get_by_id(poem.id)
-                if existing:
-                    # Check if updated (don't actually need to track this for now)
-                    # Just always add the new version
-                    if not force_rescan:
-                        updated_poems += 1
+                prior_path = seen_this_sync.get(poem.id)
+                if prior_path is not None and prior_path != poem.file_path:
+                    # Two distinct files in this scan resolve to the same id: add_poem
+                    # will evict the earlier one and it becomes unreachable. Surface it
+                    # instead of silently dropping a poem.
+                    warning_msg = (
+                        f"ID collision: '{poem.id}' from {poem.file_path} shadows "
+                        f"{prior_path}, only one is reachable. Rename one file "
+                        f"(e.g. add a distinct title or number prefix)."
+                    )
+                    warnings.append(warning_msg)
+                    logger.warning(warning_msg)
+                elif self.index.get_by_id(poem.id) and not force_rescan:
+                    # Same id already in the index from a prior sync (re-parse or move).
+                    updated_poems += 1
                 else:
                     new_poems += 1
 
-                # Always add the poem (will overwrite if exists)
+                seen_this_sync[poem.id] = poem.file_path
+                # Always add the poem (evicts any prior version with this ID)
                 self.index.add_poem(poem)
 
             except FrontmatterParseError as e:

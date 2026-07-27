@@ -180,27 +180,29 @@ def generate_poem_id(file_path: Path) -> str:
     """
     Generate poem ID from filename.
 
-    Removes .md extension and normalizes to lowercase-with-dashes.
+    Slugifies the full filename stem (lowercase, single dashes). The leading
+    ordering prefix is kept deliberately: several drafts can share a title, so
+    stripping the "NNN - " prefix would collapse them onto one ID and make all
+    but one unreachable. Keeping the prefix gives each file a distinct ID
+    ("055-note-charlottesville-virginia" vs "065-note-...").
+
+    IDs are always recomputed from the filename on every sync (any `id:` in
+    frontmatter is ignored) and are never written back to disk, so this scheme
+    can change without any vault migration. Distinct files that still slug to
+    the same ID are a collision the caller must surface; see Catalog.sync.
 
     Args:
         file_path: Path to poem file
 
     Returns:
-        Normalized poem ID
+        Normalized poem ID (falls back to "untitled" when the stem has no
+        alphanumeric characters)
     """
-    # Remove .md extension
-    name = file_path.stem
+    # Lowercase the full stem and collapse any run of non-alphanumeric
+    # characters (spaces, punctuation, existing dashes) into a single dash.
+    poem_id = re.sub(r"[^a-z0-9]+", "-", file_path.stem.lower()).strip("-")
 
-    # Remove leading numbers and dashes (e.g., "11 - Toeses" -> "Toeses")
-    name = re.sub(r"^\d+\s*-\s*", "", name)
-
-    # Convert to lowercase and replace spaces with dashes
-    poem_id = name.lower().replace(" ", "-")
-
-    # Remove any other special characters except dashes
-    poem_id = re.sub(r"[^a-z0-9-]", "", poem_id)
-
-    return poem_id
+    return poem_id or "untitled"
 
 
 def extract_title(content: str, file_path: Path) -> str:
