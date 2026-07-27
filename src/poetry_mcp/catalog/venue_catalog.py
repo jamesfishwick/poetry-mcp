@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class VenueIndex:
     """Fast lookup indices for venues."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.all_venues: list[Venue] = []
         self.by_name: dict[str, Venue] = {}
         self.by_file: dict[str, Venue] = {}
@@ -155,8 +155,12 @@ class VenueCatalog:
         results = self.index.all_venues.copy()
 
         if payment_filter:
+            # v.payment may be a bool (YAML `payment: yes` -> True); only substring-
+            # match against string values, mirroring the simultaneous filter below.
             results = [
-                v for v in results if v.payment and payment_filter.lower() in v.payment.lower()
+                v
+                for v in results
+                if isinstance(v.payment, str) and payment_filter.lower() in v.payment.lower()
             ]
 
         if simultaneous_filter is not None:
