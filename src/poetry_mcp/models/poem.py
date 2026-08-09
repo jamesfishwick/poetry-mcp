@@ -4,7 +4,7 @@ Data comes from markdown file frontmatter, not BASE files.
 """
 
 from datetime import datetime
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -74,6 +74,19 @@ class Poem(BaseModel):
     qualities: dict[str, int] | None = Field(
         default=None, description="Quality scores (0-10) keyed by dimension name"
     )
+
+    # Publication history. Non-empty means the poem is ineligible at any venue
+    # that does not accept reprints. Each entry: venue, date, and optionally
+    # issue, url, note.
+    published: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Prior publications; non-empty means previously published",
+    )
+
+    @property
+    def is_previously_published(self) -> bool:
+        """True if this poem has any recorded prior publication."""
+        return bool(self.published)
 
     # Chain membership (for linking poems into sequences or collections)
     chains: list[str] = Field(default_factory=list, description="Chain IDs this poem belongs to")

@@ -112,6 +112,9 @@ def parse_poem_file(
     keywords = frontmatter.get("keywords")
     notes = frontmatter.get("notes")
     qualities = frontmatter.get("qualities")  # Optional quality scores dict
+    published = frontmatter.get("published") or []  # Prior publications; blocks reprints
+    if isinstance(published, dict):
+        published = [published]  # Tolerate a single mapping instead of a list
 
     # Build Poem object
     try:
@@ -131,6 +134,7 @@ def parse_poem_file(
             updated_at=updated_at,
             content=poem_content,  # Include full content
             qualities=qualities,  # Include quality scores if present
+            published=published,  # Prior publications, if any
         )
     except Exception as e:
         raise FrontmatterParseError(f"Failed to create Poem object for {file_path}: {e}")
