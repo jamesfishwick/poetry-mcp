@@ -132,3 +132,6 @@ dmypy.json
 # Poetry MCP specific
 poetry-mcp.log
 config.yaml
+
+# Claude Code local rules/config (private, per-user)
+.claude/
