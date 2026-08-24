@@ -65,6 +65,13 @@ class SubmissionWriter:
         if sub.cost is not None:
             fm["cost"] = sub.cost
 
+        # Emit notes into frontmatter, not only the body ## Notes section, so the
+        # parser (which reads notes from frontmatter) round-trips it back into
+        # CreateSubmissionResult.submission.notes. The body still renders the same
+        # text for humans reading in Obsidian.
+        if sub.notes is not None and sub.notes.strip():
+            fm["notes"] = sub.notes
+
         yaml_str = yaml.dump(
             fm,
             default_flow_style=False,

@@ -754,12 +754,15 @@ async def create_submission(
     convenient. Poem titles are likewise checked against the catalog only to warn
     on likely typos, never to block.
 
-    Safety: the destination filename is canonical (date_lead-poem_venue). If a
-    file with that name already exists the call refuses unless overwrite=True, so
-    a duplicate same-day submission cannot silently clobber the earlier record.
-    An overwrite backs the prior file up to a .bak sibling first. The generated
-    file is parsed back before being committed to disk; if it does not parse,
-    nothing is written.
+    Safety: the destination filename is canonical (date_lead-poem_venue), so the
+    collision key is the submitted date, the lead poem, and the venue together.
+    Two different poems to the same venue on the same day do not collide, and
+    undated or planned submissions share an XXXX-XX-XX date component (so they
+    collide on lead poem and venue alone). If a file with that name already
+    exists the call refuses unless overwrite=True, so it cannot silently clobber
+    the earlier record. An overwrite backs the prior file up to a .bak sibling
+    first. The generated file is parsed back before being committed to disk; if
+    it does not parse, nothing is written.
 
     Args:
         venue_name: Venue this submission is for (e.g. "Glossy Planet").

@@ -121,11 +121,18 @@ async def create_submission_impl(
     # Build and validate the submission via the model so an invalid status or an
     # empty poem list fails here with a clear message rather than producing a
     # malformed file.
+    # Keep `submitted` consistent with `status` at construction. Without this the
+    # model defaults submitted=False, so a status="submitted" record reports
+    # is_active=False. The parser infers the same flag from status on read-back,
+    # so we deliberately do not write `submitted` to frontmatter (matching the
+    # hand-authored files); this only fixes the in-memory object.
+    submitted_states = {"submitted", "accepted", "rejected", "withdrawn"}
     try:
         submission = Submission(
             venue_name=venue_name,
             poems=poems,
             status=status,
+            submitted=status in submitted_states,
             submitted_date=submitted_date,
             due_date=due_date,
             response_date=response_date,
@@ -183,11 +190,14 @@ async def create_submission_impl(
 
     # Validate before committing: write to a temp file in the same directory,
     # parse it back through the real parser, and only move it into place if it
-    # round-trips. This guarantees we never leave an unparseable submission on
-    # disk. If a valid file is being overwritten, back it up first.
+    # round-trips. So this call never WRITES an unparseable submission (a
+    # concurrent vault edit could still mutate the file afterward). The temp uses
+    # a `.md.tmp` suffix so a crash-leaked temp is not picked up by the
+    # submissions `*.md` sync glob. If a valid file is being overwritten, back it
+    # up first.
     backup_created = None
     tmp_fd, tmp_name = tempfile.mkstemp(
-        dir=submissions_dir, prefix=".tmp_submission_", suffix=".md"
+        dir=submissions_dir, prefix=".tmp_submission_", suffix=".md.tmp"
     )
     tmp_path = Path(tmp_name)
     try:
@@ -204,7 +214,20 @@ async def create_submission_impl(
             )
 
         if target.exists():
-            backup_created = create_backup(target)
+            try:
+                backup_created = create_backup(target)
+            except Exception as e:
+                # Refuse to overwrite if we cannot preserve the original first,
+                # and say so cleanly rather than escaping as a traceback.
+                return CreateSubmissionResult(
+                    success=False,
+                    file_path=str(target),
+                    warnings=warnings,
+                    error=(
+                        f"Could not back up the existing file before overwrite; "
+                        f"aborted to protect it: {e}"
+                    ),
+                )
 
         tmp_path.replace(target)
     finally:
@@ -212,17 +235,27 @@ async def create_submission_impl(
         if tmp_path.exists():
             tmp_path.unlink()
 
-    # Re-parse from the final location so source_file points at the real path.
-    parsed = parser.parse_file(target)
-
     logger.info(f"Created submission: {target.name} ({status}, {len(poems)} poem(s))")
     if backup_created:
         logger.info(f"Backed up prior file to {backup_created}")
 
+    # The file is durably written now. Re-reading it (to capture source_file) and
+    # resyncing run AFTER the write, so a failure here (a concurrent vault edit, or
+    # sync tripping over another file) must NOT be reported as if the write failed.
+    # Degrade to success with synced=False and a warning; fall back to the
+    # in-memory submission for the returned object.
+    parsed = submission
     synced = False
-    if sync:
-        sub_cat.sync(force_rescan=True)
-        synced = True
+    try:
+        parsed = parser.parse_file(target)
+        if sync:
+            sub_cat.sync(force_rescan=True)
+            synced = True
+    except Exception as e:
+        warnings.append(
+            f"Submission was written to {target.name}, but re-reading or resyncing "
+            f"the catalog failed: {e}. Run sync_submissions to index it."
+        )
 
     return CreateSubmissionResult(
         success=True,
@@ -236,30 +269,28 @@ async def create_submission_impl(
 def _poem_in_catalog(catalog: Any, title: str) -> bool:
     """Best-effort check that a poem title exists in the catalog.
 
-    Catalog shape varies (title index vs. list scan), so try the common
-    accessors and fall back to a case-insensitive title/id scan. Returns True on
-    any match; a False only feeds a non-fatal warning, never blocks creation.
+    The lookup methods live on the catalog's index, not on Catalog itself:
+    Catalog exposes CatalogIndex as ``.index`` (with ``get_by_title`` and
+    ``all_poems``). We resolve ``catalog.index`` when present and fall back to
+    treating the argument as the index directly, so a test can inject either an
+    index-shaped object or a full catalog. A False only feeds a non-fatal
+    warning and never blocks creation, so an odd/absent catalog degrades to
+    "not found" rather than raising.
     """
+    index = getattr(catalog, "index", catalog)
     needle = title.strip().lower()
 
-    getter = getattr(catalog, "get_by_title", None)
+    getter = getattr(index, "get_by_title", None)
     if callable(getter):
         try:
             if getter(title):
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            # A real catalog fault must not masquerade as "poem not found" with
+            # no trace; log it so the spurious warning is diagnosable.
+            logger.debug("catalog.index.get_by_title raised for %r: %s", title, e)
 
-    get_all = getattr(catalog, "get_all", None)
-    poems = None
-    if callable(get_all):
-        try:
-            poems = get_all()
-        except Exception:
-            poems = None
-    if poems is None:
-        poems = getattr(catalog, "poems", None)
-
+    poems = getattr(index, "all_poems", None)
     if poems:
         for poem in poems:
             ptitle = str(getattr(poem, "title", "")).strip().lower()

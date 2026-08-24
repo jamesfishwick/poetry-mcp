@@ -7,6 +7,7 @@ of the generated file.
 """
 
 import asyncio
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import poetry_mcp.tools.submission_tools as submission_tools_module
@@ -197,8 +198,11 @@ def test_unknown_venue_warns_but_creates(tmp_path):
 def test_unknown_poem_warns_but_creates(tmp_path):
     vault, cfg = _make_vault(tmp_path)
     sub_cat = SubmissionCatalog(submissions_dir=vault / "submissions")
-    catalog = Mock(spec=["get_all"])
-    catalog.get_all.return_value = [Mock(title="Some Other Poem", id="some-other-poem")]
+    # Lookups live on catalog.index (Catalog exposes CatalogIndex there), so shape
+    # the mock the way the real object is shaped, not with a bare get_all.
+    catalog = Mock()
+    catalog.index.get_by_title.return_value = None
+    catalog.index.all_poems = [Mock(title="Some Other Poem", id="some-other-poem")]
 
     result = _run(
         create_submission_impl(
@@ -217,13 +221,15 @@ def test_unknown_poem_warns_but_creates(tmp_path):
 def test_known_poem_no_warning(tmp_path):
     vault, cfg = _make_vault(tmp_path)
     sub_cat = SubmissionCatalog(submissions_dir=vault / "submissions")
-    catalog = Mock(spec=["get_all"])
-    catalog.get_all.return_value = [Mock(title="Careful Circles", id="26-careful-circles")]
+    # get_by_title (the primary, case-insensitive accessor on the index) finds it.
+    catalog = Mock()
+    catalog.index.get_by_title.return_value = Mock(title="Careful Circles")
+    catalog.index.all_poems = []
 
     result = _run(
         create_submission_impl(
             venue_name="Rattle",
-            poems=["careful circles"],  # case-insensitive match
+            poems=["Careful Circles"],
             submitted_date="2026-08-23",
             sub_cat=sub_cat,
             catalog=catalog,
@@ -232,6 +238,53 @@ def test_known_poem_no_warning(tmp_path):
     )
     assert result.success is True
     assert result.warnings == []
+
+
+def test_poem_lookup_against_real_catalog(tmp_path):
+    """Regression for the lookup running against a real Catalog.
+
+    _poem_in_catalog must reach the poem index via catalog.index (Catalog itself
+    has no get_by_title/all_poems). A known poem must NOT warn; an unknown one
+    must. A mock with the wrong shape hid this; a real Catalog catches it.
+    """
+    from poetry_mcp.catalog.catalog import Catalog
+
+    vault, cfg = _make_vault(tmp_path)
+    poem_dir = vault / "catalog" / "completed"
+    poem_dir.mkdir(parents=True)
+    (poem_dir / "hog.md").write_text(
+        "---\nstate: completed\nform: free_verse\n---\n\n"
+        "# No one really likes their hog\n\nA hog poem\n"
+    )
+    catalog = Catalog(vault_root=vault)
+    catalog.sync()
+    sub_cat = SubmissionCatalog(submissions_dir=vault / "submissions")
+
+    known = _run(
+        create_submission_impl(
+            venue_name="Rattle",
+            poems=["No one really likes their hog"],
+            submitted_date="2026-08-23",
+            sub_cat=sub_cat,
+            catalog=catalog,
+        ),
+        cfg,
+    )
+    assert known.success is True
+    assert not any("not found in the poem catalog" in w for w in known.warnings)
+
+    unknown = _run(
+        create_submission_impl(
+            venue_name="Rattle",
+            poems=["A Poem That Does Not Exist"],
+            submitted_date="2026-08-24",
+            sub_cat=sub_cat,
+            catalog=catalog,
+        ),
+        cfg,
+    )
+    assert unknown.success is True
+    assert any("not found in the poem catalog" in w for w in unknown.warnings)
 
 
 def test_details_block_inserted_between_poems_and_notes(tmp_path):
@@ -307,3 +360,102 @@ def test_sync_false_skips_resync(tmp_path):
     assert result.success is True
     assert result.synced is False
     sub_cat.sync.assert_not_called()
+
+
+def test_unparseable_generation_writes_nothing(tmp_path):
+    """The flagship safety claim: if the generated file does not parse, the tool
+    returns success=False, writes nothing to the target, and leaves no temp."""
+    vault, cfg = _make_vault(tmp_path)
+    subs_dir = vault / "submissions"
+    sub_cat = SubmissionCatalog(submissions_dir=subs_dir)
+
+    with patch.object(
+        submission_tools_module.SubmissionParser,
+        "parse_file",
+        side_effect=Exception("boom: unparseable"),
+    ):
+        result = _run(
+            create_submission_impl(
+                venue_name="Rattle",
+                poems=["Hog"],
+                submitted_date="2026-08-23",
+                sub_cat=sub_cat,
+                sync=False,
+            ),
+            cfg,
+        )
+
+    assert result.success is False
+    assert "did not parse" in result.error
+    # Nothing landed at the target, and no temp file leaked.
+    assert list(subs_dir.glob("*.md")) == []
+    assert list(subs_dir.glob(".tmp_submission_*")) == []
+
+
+def test_post_write_resync_failure_still_reports_success(tmp_path):
+    """If the file is written but the post-write resync throws, the tool must
+    report success=True (the record IS on disk) with synced=False and a warning,
+    not escape as an uncaught exception."""
+    vault, cfg = _make_vault(tmp_path)
+    sub_cat = Mock()
+    sub_cat.sync.side_effect = RuntimeError("catalog blew up")
+
+    result = _run(
+        create_submission_impl(
+            venue_name="Rattle",
+            poems=["Hog"],
+            submitted_date="2026-08-23",
+            sub_cat=sub_cat,
+        ),
+        cfg,
+    )
+
+    assert result.success is True  # file was written
+    assert result.synced is False
+    assert any("Run sync_submissions" in w for w in result.warnings)
+    # The file really is on disk despite the resync failure.
+    assert Path(result.file_path).exists()
+
+
+def test_submitted_flag_consistent_with_status(tmp_path):
+    """A status=submitted create must yield submitted=True (and is_active), not
+    the model's default submitted=False."""
+    vault, cfg = _make_vault(tmp_path)
+    sub_cat = SubmissionCatalog(submissions_dir=vault / "submissions")
+
+    result = _run(
+        create_submission_impl(
+            venue_name="Rattle",
+            poems=["Hog"],
+            status="submitted",
+            submitted_date="2026-08-23",
+            sub_cat=sub_cat,
+        ),
+        cfg,
+    )
+    assert result.success is True
+    assert result.submission.submitted is True
+    assert result.submission.is_active is True
+
+
+def test_notes_round_trip_into_parsed_submission(tmp_path):
+    """notes passed in must survive into the parsed-back submission, not vanish
+    because it was written only to the body."""
+    vault, cfg = _make_vault(tmp_path)
+    sub_cat = SubmissionCatalog(submissions_dir=vault / "submissions")
+
+    result = _run(
+        create_submission_impl(
+            venue_name="Rattle",
+            poems=["Hog"],
+            submitted_date="2026-08-23",
+            notes="watch the reprint clause",
+            sub_cat=sub_cat,
+        ),
+        cfg,
+    )
+    assert result.success is True
+    assert result.submission.notes == "watch the reprint clause"
+    # And it survives an independent re-parse from disk.
+    reparsed = SubmissionParser().parse_file(Path(result.file_path))
+    assert reparsed.notes == "watch the reprint clause"
