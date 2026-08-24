@@ -447,6 +447,18 @@ class Catalog:
                     md_file, self.vault_root, folder_state_map=self.folder_state_map
                 )
 
+                # Surface a coerced form the same way every other integrity event
+                # in this loop is surfaced: in SyncResult.warnings, not only the
+                # model-level log. The poem is kept (that is the point), but the
+                # user gets told its declared form was not recognized. The model
+                # validator already logged, so no second logger call here.
+                if poem._coerced_form_from is not None:
+                    warnings.append(
+                        f"{poem.file_path}: form '{poem._coerced_form_from}' not "
+                        f"recognized, using '{poem.form}'. Add it to "
+                        f"vault.custom_forms to keep the declared value."
+                    )
+
                 prior_path = seen_this_sync.get(poem.id)
                 if prior_path is not None and prior_path != poem.file_path:
                     # Two distinct files in this scan resolve to the same id: add_poem

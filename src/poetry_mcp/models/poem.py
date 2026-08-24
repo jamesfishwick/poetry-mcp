@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,11 @@ STANDARD_FORMS: frozenset[str] = frozenset(
 # Fallback applied when a poem declares a form nothing recognizes. Form is
 # metadata, not identity, so an unknown value must never cost us the poem.
 FALLBACK_FORM = "free_verse"
+
+# Coercion can only ever produce FALLBACK_FORM, so it must itself be a standard
+# form; otherwise validate_form would emit a value it just called invalid. Pin
+# the invariant at import instead of leaving it implicit.
+assert FALLBACK_FORM in STANDARD_FORMS, "FALLBACK_FORM must be in STANDARD_FORMS"
 
 
 class Poem(BaseModel):
@@ -46,6 +51,12 @@ class Poem(BaseModel):
     # Class variable for custom forms (set by catalog during initialization).
     # Received forms (pantoum, villanelle, sestina...) belong here rather than
     # in STANDARD_FORMS so the taxonomy lives in config, not in source.
+    #
+    # Tracked debt: this is process-global state (like _custom_states above), so
+    # form validity is decided by whichever Catalog was constructed last. Correct
+    # for the single-catalog server today; if two catalogs with different
+    # custom_forms ever coexist, move this to pydantic validation context
+    # (model_validate(..., context=...)) so validity scopes per call instead.
     _custom_forms: ClassVar[set[str]] = set()
 
     @classmethod
@@ -70,7 +81,19 @@ class Poem(BaseModel):
     # before any field_validator runs, which made unknown forms a hard
     # ValidationError and dropped the whole poem from the catalog. Validation
     # now happens in validate_form below, which coerces instead of raising.
-    form: str = Field(..., description="Structural/formal pattern")
+    # json_schema_extra restores the closed-set hint the Literal used to
+    # auto-generate, for clients introspecting the schema (advisory, not enforced).
+    form: str = Field(
+        ...,
+        description="Structural/formal pattern",
+        json_schema_extra={"knownForms": sorted(STANDARD_FORMS)},
+    )
+
+    # Set by the parser when `form` was coerced (the declared value was not
+    # recognized). Holds the original declared form so Catalog.sync can surface
+    # the coercion in SyncResult.warnings. Not a frontmatter field; a PrivateAttr,
+    # so it stays out of serialization, equality, and the schema.
+    _coerced_form_from: str | None = PrivateAttr(default=None)
 
     # Frontmatter: Optional properties
     tags: list[str] = Field(default_factory=list, description="Thematic tags for nexus connections")
@@ -140,9 +163,11 @@ class Poem(BaseModel):
         """Accept known forms; coerce anything else rather than rejecting the poem.
 
         Rejecting here would raise a ValidationError, which fails construction of
-        the entire Poem and silently removes it from the catalog. Form is
-        metadata, so an unrecognized value degrades to FALLBACK_FORM and logs a
-        warning instead. Declare received forms in config.vault.custom_forms to
+        the entire Poem and drops it from the catalog, surfaced only as a generic
+        parse-failure warning rather than a specific one. Form is metadata, so an
+        unrecognized value degrades to FALLBACK_FORM and logs a warning instead.
+        Catalog.sync also records the coercion in SyncResult.warnings via
+        _coerced_form_from. Declare received forms in config.vault.custom_forms to
         keep them.
         """
         if v in STANDARD_FORMS | cls._custom_forms:

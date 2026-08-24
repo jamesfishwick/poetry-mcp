@@ -1,5 +1,6 @@
 """Unit tests for Pydantic models."""
 
+import logging
 from datetime import datetime
 
 import pytest
@@ -81,6 +82,25 @@ class TestPoemModel:
             updated_at=datetime.now(),
         )
         assert poem.form == "free_verse"
+
+    def test_unknown_form_logs_warning(self, caplog):
+        """Coercion must emit a warning; that log line is the model-level signal
+        a human relies on to notice a form was silently rewritten."""
+        with caplog.at_level(logging.WARNING, logger="poetry_mcp.models.poem"):
+            Poem(
+                id="test",
+                title="Test",
+                file_path="test.md",
+                state="completed",
+                form="not_a_real_form",
+                word_count=10,
+                line_count=5,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+        assert any(
+            "not_a_real_form" in r.message and "free_verse" in r.message for r in caplog.records
+        )
 
     def test_custom_form_is_preserved(self):
         """A form declared in custom_forms survives validation unchanged."""

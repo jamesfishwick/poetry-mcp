@@ -11,9 +11,11 @@ from poetry_mcp.config import (
     PoetryMCPConfig,
     SearchConfig,
     VaultConfig,
+    create_default_config,
     find_config_file,
     get_config,
     load_config_from_file,
+    save_config,
 )
 
 
@@ -75,6 +77,45 @@ class TestVaultConfig:
         )
 
         assert config.custom_states == ["phone_poetry", "experimental", "abandoned"]
+
+    def test_vault_config_with_custom_forms(self, tmp_path):
+        """Test VaultConfig with custom form definitions."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+
+        config = VaultConfig(path=vault, custom_forms=["pantoum", "villanelle", "sestina"])
+
+        assert config.custom_forms == ["pantoum", "villanelle", "sestina"]
+
+    def test_custom_forms_survive_save_and_load(self, tmp_path):
+        """custom_forms must round-trip through save_config / load_config_from_file.
+
+        Guards against the field being dropped from the save dict, which would
+        silently erase declared forms on the next save and degrade every custom
+        form to free_verse on reload.
+        """
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config_path = tmp_path / "config.yaml"
+
+        original = PoetryMCPConfig(
+            vault=VaultConfig(path=vault, custom_forms=["pantoum", "villanelle"])
+        )
+        save_config(original, config_path)
+        loaded = load_config_from_file(config_path)
+
+        assert loaded.vault.custom_forms == ["pantoum", "villanelle"]
+
+    def test_create_default_config_includes_custom_forms(self, tmp_path):
+        """The generated default config must carry the custom_forms key (empty list)."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config_path = tmp_path / "config.yaml"
+
+        create_default_config(vault, config_path)
+        loaded = load_config_from_file(config_path)
+
+        assert loaded.vault.custom_forms == []
 
     @pytest.mark.skip(reason="Tilde expansion uses os.path.expanduser which can't be easily mocked")
     def test_vault_path_expansion_tilde(self, tmp_path, monkeypatch):

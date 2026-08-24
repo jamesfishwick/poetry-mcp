@@ -578,6 +578,67 @@ Very old poem"""
         assert len(archived) == 1
         assert archived[0].title == "Old Poem"
 
+    def test_catalog_keeps_unknown_form_and_warns(self, vault_with_poems):
+        """An unknown form must NOT drop the poem from the catalog.
+
+        This is the regression the feature exists to prevent, driven end to end
+        rather than at the model layer: before, an unrecognized form raised a
+        ValidationError that sync() counted as a skip, so the whole poem vanished.
+        Now sync() keeps it as free_verse AND surfaces the coercion in
+        SyncResult.warnings (the same channel used for every other integrity
+        event), not only a log line.
+        """
+        odd_dir = vault_with_poems / "catalog" / "forms"
+        odd_dir.mkdir()
+        (odd_dir / "pantoum.md").write_text(
+            """---
+state: completed
+form: pantoum
+---
+
+# Broken Pantoum
+
+Line one repeats"""
+        )
+
+        catalog = Catalog(vault_root=vault_with_poems)  # no custom_forms declared
+        result = catalog.sync()
+
+        # Poem is kept, not skipped.
+        assert result.total_poems == 4
+        assert result.skipped_poems == 0
+        kept = [p for p in catalog.index.all_poems if p.title == "Broken Pantoum"]
+        assert len(kept) == 1
+        assert kept[0].form == "free_verse"  # coerced from the unknown 'pantoum'
+
+        # Coercion is surfaced in the user-facing warnings channel.
+        assert any("pantoum" in w and "not recognized" in w for w in result.warnings)
+
+    def test_catalog_preserves_declared_custom_form(self, vault_with_poems):
+        """A form declared in custom_forms survives sync unchanged and warns no one."""
+        odd_dir = vault_with_poems / "catalog" / "forms"
+        odd_dir.mkdir()
+        (odd_dir / "pantoum.md").write_text(
+            """---
+state: completed
+form: pantoum
+---
+
+# Real Pantoum
+
+Line one repeats"""
+        )
+
+        catalog = Catalog(vault_root=vault_with_poems, custom_forms=["pantoum"])
+        result = catalog.sync()
+
+        assert result.total_poems == 4
+        assert result.skipped_poems == 0
+        kept = [p for p in catalog.index.all_poems if p.title == "Real Pantoum"]
+        assert len(kept) == 1
+        assert kept[0].form == "pantoum"  # preserved, not coerced
+        assert not any("not recognized" in w for w in result.warnings)
+
     def test_sync_performance_with_many_poems(self, tmp_path):
         """Test sync performance with 50+ poems."""
         vault_root = tmp_path / "vault"

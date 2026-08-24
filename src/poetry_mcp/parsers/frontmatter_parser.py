@@ -139,6 +139,14 @@ def parse_poem_file(
     except Exception as e:
         raise FrontmatterParseError(f"Failed to create Poem object for {file_path}: {e}")
 
+    # If the declared frontmatter form was coerced (the value was not recognized),
+    # record the original so Catalog.sync can surface it in SyncResult.warnings.
+    # A missing form filled by detect_form is inference, not coercion, so guard on
+    # the declared value actually being present.
+    declared_form = frontmatter.get("form")
+    if declared_form and poem.form != declared_form:
+        poem._coerced_form_from = str(declared_form)
+
     return poem
 
 
