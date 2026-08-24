@@ -45,6 +45,15 @@ class VaultConfig(BaseModel):
         description="Additional custom states beyond the standard ones (e.g., ['phone_poetry'])",
     )
 
+    custom_forms: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Additional forms beyond free_verse, prose_poem, american_sentence, "
+            "and catalog_poem (e.g., ['pantoum', 'villanelle', 'sestina']). A form "
+            "not listed here degrades to free_verse with a warning."
+        ),
+    )
+
     folder_state_map: dict[str, str] = Field(
         default_factory=lambda: dict(_DEFAULT_FOLDER_STATE_MAP),
         description=(
@@ -303,6 +312,7 @@ def create_default_config(vault_path: Path, config_path: Path | None = None) -> 
             "influences_dir": "influences",
             "exclude_catalog_dirs": [],
             "custom_states": [],
+            "custom_forms": [],
         },
         "search": {"default_limit": 50, "case_sensitive": False},
         "logging": {
@@ -357,6 +367,7 @@ def save_config(config: PoetryMCPConfig, config_path: Path | None = None) -> Pat
             "influences_dir": config.vault.influences_dir,
             "exclude_catalog_dirs": config.vault.exclude_catalog_dirs,
             "custom_states": config.vault.custom_states,
+            "custom_forms": config.vault.custom_forms,
         },
         "search": {
             "default_limit": config.search.default_limit,

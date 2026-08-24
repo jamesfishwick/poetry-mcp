@@ -57,7 +57,12 @@ class TestGetCatalog:
         """Test that get_catalog creates and caches catalog instance."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             # Reset global catalog
@@ -82,6 +87,7 @@ class TestGetCatalog:
                     path=test_vault,
                     exclude_catalog_dirs=["archive"],
                     custom_states=["experimental"],
+                    custom_forms=["pantoum"],
                 )
             )
 
@@ -100,7 +106,12 @@ class TestCatalogSync:
         """Test successful catalog sync via get_catalog."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -118,7 +129,12 @@ class TestCatalogSync:
         """Test sync with force_rescan=True."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -142,7 +158,12 @@ class TestCatalogGetPoem:
         """Test getting poem by ID."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -161,7 +182,12 @@ class TestCatalogGetPoem:
         """Test getting poem by title."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -179,7 +205,12 @@ class TestCatalogGetPoem:
         """Test getting nonexistent poem returns None."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -196,7 +227,12 @@ class TestCatalogGetPoem:
         """Test poem contains content after sync."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -219,7 +255,12 @@ class TestCatalogSearch:
         """Test searching poems by text query."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -237,7 +278,12 @@ class TestCatalogSearch:
         """Test searching poems by state."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -254,7 +300,12 @@ class TestCatalogSearch:
         """Test searching poems by form."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -272,7 +323,12 @@ class TestCatalogSearch:
         """Test accessing all poems."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -293,7 +349,12 @@ class TestCatalogTagOperations:
         """Test finding poems with single tag."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -311,7 +372,12 @@ class TestCatalogTagOperations:
         """Test finding poems with any of multiple tags."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -328,7 +394,12 @@ class TestCatalogTagOperations:
         """Test finding poems with all specified tags."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -350,7 +421,12 @@ class TestCatalogStats:
         """Test getting catalog statistics."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module
@@ -369,7 +445,12 @@ class TestCatalogStats:
         """Test catalog exposes vault root for server info."""
         with patch("poetry_mcp.server.load_config") as mock_config:
             mock_config.return_value = Mock(
-                vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+                vault=Mock(
+                    path=test_vault,
+                    exclude_catalog_dirs=[],
+                    custom_states=[],
+                    custom_forms=[],
+                )
             )
 
             import poetry_mcp.server as server_module

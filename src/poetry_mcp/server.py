@@ -150,12 +150,15 @@ def get_catalog() -> Catalog:
             vault_root=config.vault.path,
             exclude_dirs=config.vault.exclude_catalog_dirs,
             custom_states=config.vault.custom_states,
+            custom_forms=config.vault.custom_forms,
         )
         logger.info(f"Catalog initialized with vault: {config.vault.path}")
         if config.vault.exclude_catalog_dirs:
             logger.info(f"Excluding directories: {config.vault.exclude_catalog_dirs}")
         if config.vault.custom_states:
             logger.info(f"Custom states enabled: {config.vault.custom_states}")
+        if config.vault.custom_forms:
+            logger.info(f"Custom forms enabled: {config.vault.custom_forms}")
 
     return catalog
 

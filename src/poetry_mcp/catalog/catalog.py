@@ -326,6 +326,7 @@ class Catalog:
         vault_root: Path,
         exclude_dirs: list[str] | None = None,
         custom_states: list[str] | None = None,
+        custom_forms: list[str] | None = None,
         folder_state_map: dict[str, str] | None = None,
     ):
         """
@@ -335,6 +336,9 @@ class Catalog:
             vault_root: Absolute path to Poetry vault root
             exclude_dirs: Optional list of catalog subdirectories to exclude from scanning
             custom_states: Optional list of custom states to accept (beyond standard states)
+            custom_forms: Optional list of custom forms to accept (beyond STANDARD_FORMS).
+                A form outside this set degrades to free_verse with a warning
+                rather than dropping the poem from the catalog.
             folder_state_map: Optional folder->state map (injected). When None,
                 defaults to DEFAULT_FOLDER_STATE_MAP. Folder-derived states are
                 automatically treated as valid so the map cannot drift out of
@@ -365,6 +369,13 @@ class Catalog:
         extra_states = set(custom_states or []) | set(self.folder_state_map.values())
         if extra_states:
             Poem.set_custom_states(sorted(extra_states))
+
+        # Set custom forms on Poem model for validation. Unlike states, forms are
+        # never derived from the filesystem: a received form is declared in
+        # frontmatter or it does not exist. Always call this, including with an
+        # empty list, so a Catalog rebuilt with no custom forms clears any set
+        # left on the class by a previous instance.
+        Poem.set_custom_forms(list(custom_forms or []))
 
     def sync(self, force_rescan: bool = False, update_missing_metadata: bool = True) -> SyncResult:
         """
@@ -435,6 +446,18 @@ class Catalog:
                 poem = parse_poem_file(
                     md_file, self.vault_root, folder_state_map=self.folder_state_map
                 )
+
+                # Surface a coerced form the same way every other integrity event
+                # in this loop is surfaced: in SyncResult.warnings, not only the
+                # model-level log. The poem is kept (that is the point), but the
+                # user gets told its declared form was not recognized. The model
+                # validator already logged, so no second logger call here.
+                if poem._coerced_form_from is not None:
+                    warnings.append(
+                        f"{poem.file_path}: form '{poem._coerced_form_from}' not "
+                        f"recognized, using '{poem.form}'. Add it to "
+                        f"vault.custom_forms to keep the declared value."
+                    )
 
                 prior_path = seen_this_sync.get(poem.id)
                 if prior_path is not None and prior_path != poem.file_path:
