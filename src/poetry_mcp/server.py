@@ -23,6 +23,7 @@ from .config import load_config
 from .models.nexus import NexusRegistry
 from .models.poem import Poem
 from .models.results import (
+    CreateSubmissionResult,
     NexusCountsResult,
     NexusOperationResult,
     RegenerateVenueResult,
@@ -111,6 +112,7 @@ from .tools.similarity_tools import (
     initialize_similarity_tools,
 )
 from .tools.submission_tools import (
+    create_submission_impl,
     get_submission_stats_impl,
     list_submissions_impl,
     sync_submissions_impl,
@@ -722,6 +724,93 @@ async def list_submissions(
         poem,
         limit,
         sub_cat=get_submission_catalog(),
+    )
+
+
+@mcp.tool()
+async def create_submission(
+    venue_name: str,
+    poems: list[str],
+    status: SubmissionStatus = "submitted",
+    submitted_date: str | None = None,
+    due_date: str | None = None,
+    response_date: str | None = None,
+    cost: str | None = None,
+    notes: str | None = None,
+    details: str | None = None,
+    overwrite: bool = False,
+    sync: bool = True,
+) -> CreateSubmissionResult:
+    """
+    Create a new submission record as a markdown file in submissions/.
+
+    This is the write counterpart to list_submissions/update_submission_status:
+    it adds a submission that does not exist yet, rather than editing one that
+    does. The file is the source of truth; after writing, the submission catalog
+    is resynced (unless sync=False) so the record shows up immediately.
+
+    The venue does not need to exist first. If it is unknown, the submission is
+    still created and a warning is returned; add venue metadata separately when
+    convenient. Poem titles are likewise checked against the catalog only to warn
+    on likely typos, never to block.
+
+    Safety: the destination filename is canonical (date_lead-poem_venue), so the
+    collision key is the submitted date, the lead poem, and the venue together.
+    Two different poems to the same venue on the same day do not collide, and
+    undated or planned submissions share an XXXX-XX-XX date component (so they
+    collide on lead poem and venue alone). If a file with that name already
+    exists the call refuses unless overwrite=True, so it cannot silently clobber
+    the earlier record. An overwrite backs the prior file up to a .bak sibling
+    first. The generated file is parsed back before being committed to disk; if
+    it does not parse, nothing is written.
+
+    Args:
+        venue_name: Venue this submission is for (e.g. "Glossy Planet").
+        poems: One or more poem titles. Written as [[wikilinks]] in ## Poems.
+        status: planned, submitted (default), accepted, rejected, or withdrawn.
+        submitted_date: Date sent, ISO "YYYY-MM-DD" or fuzzy "2026-August".
+        due_date: Deadline for a planned submission.
+        response_date: Expected/actual response date (stored as
+            expected_response_date, matching existing files).
+        cost: Reading fee, e.g. "free" or "$3".
+        notes: Short note written into the ## Notes section.
+        details: Optional freeform markdown inserted between ## Poems and
+            ## Notes (may include its own ## headings: Terms, rationale, etc.).
+        overwrite: If True, replace an existing file of the same canonical name
+            (backing it up first). Default False.
+        sync: If True (default), resync the submission catalog after writing.
+
+    Returns:
+        CreateSubmissionResult with the written file path, the parsed-back
+        Submission, any warnings, and whether a resync ran.
+
+    Example:
+        ```
+        await create_submission(
+            venue_name="Glossy Planet",
+            poems=["No one really likes their hog"],
+            submitted_date="2026-08-23",
+            response_date="2026-10-01",
+            cost="free",
+            notes="Free 'Free Space' challenge; finalist publication Jan 2027.",
+        )
+        ```
+    """
+    return await create_submission_impl(
+        venue_name,
+        poems,
+        status,
+        submitted_date,
+        due_date,
+        response_date,
+        cost,
+        notes,
+        details,
+        overwrite,
+        sync,
+        sub_cat=get_submission_catalog(),
+        ven_cat=get_venue_catalog(),
+        catalog=get_catalog(),
     )
 
 
