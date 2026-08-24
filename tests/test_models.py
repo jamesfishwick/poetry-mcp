@@ -67,21 +67,56 @@ class TestPoemModel:
             )
         assert "Invalid state" in str(exc_info.value)
 
-    def test_invalid_form(self):
-        """Test that invalid form raises validation error."""
-        with pytest.raises(ValidationError) as exc_info:
-            Poem(
+    def test_unknown_form_degrades_to_free_verse(self):
+        """An unrecognized form must coerce, not drop the poem from the catalog."""
+        poem = Poem(
+            id="test",
+            title="Test",
+            file_path="test.md",
+            state="completed",
+            form="not_a_real_form",
+            word_count=10,
+            line_count=5,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        assert poem.form == "free_verse"
+
+    def test_custom_form_is_preserved(self):
+        """A form declared in custom_forms survives validation unchanged."""
+        Poem.set_custom_forms(["pantoum"])
+        try:
+            poem = Poem(
                 id="test",
                 title="Test",
                 file_path="test.md",
                 state="completed",
-                form="invalid_form",
+                form="pantoum",
                 word_count=10,
                 line_count=5,
                 created_at=datetime.now(),
                 updated_at=datetime.now(),
             )
-        assert "literal_error" in str(exc_info.value) or "Invalid" in str(exc_info.value)
+            assert poem.form == "pantoum"
+        finally:
+            Poem.set_custom_forms([])
+
+    def test_custom_forms_are_cleared_between_catalogs(self):
+        """Clearing custom_forms must make a previously valid form degrade again."""
+        Poem.set_custom_forms(["pantoum"])
+        Poem.set_custom_forms([])
+        poem = Poem(
+            id="test",
+            title="Test",
+            file_path="test.md",
+            state="completed",
+            form="pantoum",
+            word_count=10,
+            line_count=5,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        assert poem.form == "free_verse"
 
     def test_tags_normalization(self):
         """Test that tags are normalized (lowercase, stripped, deduplicated)."""

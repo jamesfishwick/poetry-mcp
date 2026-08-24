@@ -95,7 +95,12 @@ def initialized_tools(test_vault):
     # Mock config for nexus registry loading
     with patch("poetry_mcp.tools.enrichment_tools.load_config") as mock_config:
         mock_config.return_value = Mock(
-            vault=Mock(path=test_vault, exclude_catalog_dirs=[], custom_states=[])
+            vault=Mock(
+                path=test_vault,
+                exclude_catalog_dirs=[],
+                custom_states=[],
+                custom_forms=[],
+            )
         )
         initialize_enrichment_tools(catalog)
         yield

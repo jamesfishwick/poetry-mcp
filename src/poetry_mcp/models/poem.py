@@ -3,10 +3,23 @@
 Data comes from markdown file frontmatter, not BASE files.
 """
 
+import logging
 from datetime import datetime
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+logger = logging.getLogger(__name__)
+
+# Forms the model always accepts. Anything else must be declared in
+# config.vault.custom_forms; see Poem.set_custom_forms.
+STANDARD_FORMS: frozenset[str] = frozenset(
+    {"free_verse", "prose_poem", "american_sentence", "catalog_poem"}
+)
+
+# Fallback applied when a poem declares a form nothing recognizes. Form is
+# metadata, not identity, so an unknown value must never cost us the poem.
+FALLBACK_FORM = "free_verse"
 
 
 class Poem(BaseModel):
@@ -30,10 +43,20 @@ class Poem(BaseModel):
     # Class variable for custom states (set by catalog during initialization)
     _custom_states: ClassVar[set[str]] = set()
 
+    # Class variable for custom forms (set by catalog during initialization).
+    # Received forms (pantoum, villanelle, sestina...) belong here rather than
+    # in STANDARD_FORMS so the taxonomy lives in config, not in source.
+    _custom_forms: ClassVar[set[str]] = set()
+
     @classmethod
     def set_custom_states(cls, custom_states: list[str]) -> None:
         """Set custom states that are valid in addition to standard states."""
         cls._custom_states = set(custom_states)
+
+    @classmethod
+    def set_custom_forms(cls, custom_forms: list[str]) -> None:
+        """Set custom forms that are valid in addition to STANDARD_FORMS."""
+        cls._custom_forms = set(custom_forms)
 
     # Core identity
     id: str = Field(..., description="Unique identifier (filename without .md)")
@@ -43,9 +66,11 @@ class Poem(BaseModel):
     # Frontmatter: Required properties
     state: str = Field(..., description="Production state of the poem")
 
-    form: Literal["free_verse", "prose_poem", "american_sentence", "catalog_poem"] = Field(
-        ..., description="Structural/formal pattern"
-    )
+    # Deliberately `str`, not `Literal[...]`. A Literal is enforced by pydantic
+    # before any field_validator runs, which made unknown forms a hard
+    # ValidationError and dropped the whole poem from the catalog. Validation
+    # now happens in validate_form below, which coerces instead of raising.
+    form: str = Field(..., description="Structural/formal pattern")
 
     # Frontmatter: Optional properties
     tags: list[str] = Field(default_factory=list, description="Thematic tags for nexus connections")
@@ -112,11 +137,23 @@ class Poem(BaseModel):
     @field_validator("form")
     @classmethod
     def validate_form(cls, v: str) -> str:
-        """Validate form enum value."""
-        valid_forms = {"free_verse", "prose_poem", "american_sentence", "catalog_poem"}
-        if v not in valid_forms:
-            raise ValueError(f"Invalid form '{v}'. Must be one of: {', '.join(valid_forms)}")
-        return v
+        """Accept known forms; coerce anything else rather than rejecting the poem.
+
+        Rejecting here would raise a ValidationError, which fails construction of
+        the entire Poem and silently removes it from the catalog. Form is
+        metadata, so an unrecognized value degrades to FALLBACK_FORM and logs a
+        warning instead. Declare received forms in config.vault.custom_forms to
+        keep them.
+        """
+        if v in STANDARD_FORMS | cls._custom_forms:
+            return v
+        logger.warning(
+            "Unknown form %r; using %r instead. Add it to vault.custom_forms in "
+            "config to keep the declared value.",
+            v,
+            FALLBACK_FORM,
+        )
+        return FALLBACK_FORM
 
     @field_validator("tags")
     @classmethod
