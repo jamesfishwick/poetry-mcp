@@ -392,6 +392,29 @@ class VenueListResult(BaseModel):
     filters_applied: dict = Field(..., description="Filters used in query")
 
 
+class CreateSubmissionResult(BaseModel):
+    """
+    Result from create_submission operation.
+
+    Reports whether a new submission file was written, where, and any
+    non-fatal warnings (unknown venue, poem titles not found in the catalog).
+    """
+
+    success: bool = Field(..., description="Whether the submission file was created")
+    file_path: str | None = Field(None, description="Path to the written submission file")
+    submission: Submission | None = Field(
+        None, description="The submission as parsed back from the written file"
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Non-fatal issues (e.g. venue not in catalog, poem title not found)",
+    )
+    synced: bool = Field(
+        default=False, description="Whether the submission catalog was resynced after writing"
+    )
+    error: str | None = Field(None, description="Error message if creation failed")
+
+
 class SubmissionStatusChange(BaseModel):
     """A single submission whose status was (or would be) changed."""
 
