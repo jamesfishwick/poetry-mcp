@@ -738,3 +738,101 @@ Content {i}"""
         water_poems = catalog.index.get_by_tag("water")
         completed_water = [p for p in completed if p in water_poems]
         assert len(completed_water) == 1
+
+
+class TestSyncEvictionAndIgnoredCount:
+    """A non-force sync reports what it did not index (issue #28)."""
+
+    BODY = "---\nstate: completed\nform: free_verse\n---\n\n# {t}\n\nline"
+
+    def _vault(self, tmp_path, *names):
+        catalog_dir = tmp_path / "vault" / "catalog" / "completed"
+        catalog_dir.mkdir(parents=True)
+        for name in names:
+            (catalog_dir / f"{name}.md").write_text(self.BODY.format(t=name))
+        return tmp_path / "vault", catalog_dir
+
+    def test_deleted_file_is_evicted_on_nonforce_sync(self, tmp_path, caplog):
+        vault, catalog_dir = self._vault(tmp_path, "Keep", "Gone")
+        catalog = Catalog(vault_root=vault)
+        assert catalog.sync().total_poems == 2
+
+        (catalog_dir / "Gone.md").unlink()
+        with caplog.at_level("INFO", logger="poetry_mcp.catalog.catalog"):
+            result = catalog.sync()
+
+        assert result.removed_poems == 1
+        assert result.total_poems == 1
+        assert catalog.index.get_by_id("gone") is None
+        assert catalog.index.get_by_id("keep") is not None
+        assert any("Removed 'gone' from index" in m for m in caplog.messages), caplog.messages
+
+    def test_file_moved_under_hidden_dir_is_evicted(self, tmp_path):
+        """The Syncthing story: the live copy vanishes and only .stversions keeps one."""
+        vault, catalog_dir = self._vault(tmp_path, "Drift")
+        catalog = Catalog(vault_root=vault)
+        catalog.sync()
+
+        versions = catalog_dir / ".stversions"
+        versions.mkdir()
+        (catalog_dir / "Drift.md").rename(versions / "Drift~20250825-215745.md")
+        result = catalog.sync()
+
+        assert result.removed_poems == 1
+        assert result.ignored_files == 1
+        assert result.total_poems == 0
+        assert catalog.index.get_by_id("drift") is None
+
+    def test_file_that_stops_parsing_is_evicted_and_counted_skipped(self, tmp_path):
+        vault, catalog_dir = self._vault(tmp_path, "Flaky")
+        catalog = Catalog(vault_root=vault)
+        catalog.sync()
+
+        (catalog_dir / "Flaky.md").write_text("---\nform: [unclosed\n---\n\nbody")
+        result = catalog.sync()
+
+        assert result.skipped_poems == 1
+        assert result.removed_poems == 1
+        assert catalog.index.get_by_id("flaky") is None
+
+    def test_moved_file_is_not_counted_as_removed(self, tmp_path):
+        vault, catalog_dir = self._vault(tmp_path, "Drift")
+        catalog = Catalog(vault_root=vault)
+        catalog.sync()
+
+        (catalog_dir.parent / "fledgeling").mkdir()
+        (catalog_dir / "Drift.md").rename(catalog_dir.parent / "fledgeling" / "Drift.md")
+        result = catalog.sync()
+
+        # The stale completed/ entry was evicted by add_poem on the same id, so it
+        # is not seen as a vanished poem.
+        assert result.removed_poems == 0
+        assert result.total_poems == 1
+        assert "fledgeling" in catalog.index.get_by_id("drift").file_path
+
+    def test_ignored_files_counts_excluded_and_hidden(self, tmp_path):
+        vault, catalog_dir = self._vault(tmp_path, "Keep")
+        archive = catalog_dir.parent / "archive"
+        archive.mkdir()
+        (archive / "Old.md").write_text(self.BODY.format(t="Old"))
+        (catalog_dir / "._Keep.md").write_text(self.BODY.format(t="Sidecar"))
+        catalog = Catalog(vault_root=vault, exclude_dirs=["archive"])
+
+        result = catalog.sync()
+
+        assert result.ignored_files == 2
+        assert result.total_poems == 1
+        assert result.skipped_poems == 0
+
+    def test_force_rescan_reports_no_removals(self, tmp_path):
+        vault, catalog_dir = self._vault(tmp_path, "Keep", "Gone")
+        catalog = Catalog(vault_root=vault)
+        catalog.sync()
+        (catalog_dir / "Gone.md").unlink()
+
+        result = catalog.sync(force_rescan=True)
+
+        # The index was cleared first, so there was nothing to evict.
+        assert result.removed_poems == 0
+        assert result.total_poems == 1
+        assert catalog.index.get_by_id("gone") is None
