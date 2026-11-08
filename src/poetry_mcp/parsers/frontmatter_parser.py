@@ -70,9 +70,10 @@ def parse_poem_file(
     # Extract title (from first # heading or fallback to filename)
     title = extract_title(poem_content, file_path)
 
-    # Get file timestamps
-    created_at = datetime.fromtimestamp(file_path.stat().st_ctime)
-    updated_at = datetime.fromtimestamp(file_path.stat().st_mtime)
+    # Get file timestamps. Poem.ensure_aware attaches the local offset.
+    stat = file_path.stat()
+    created_at = datetime.fromtimestamp(stat.st_ctime)
+    updated_at = datetime.fromtimestamp(stat.st_mtime)
 
     # Compute metrics
     word_count = count_words(poem_content)

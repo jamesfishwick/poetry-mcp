@@ -9,7 +9,7 @@ description = "MCP server for poetry catalog and nexus management"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "fastmcp>=0.2.0",
+    "fastmcp>=2.10",
     "pydantic>=2.0.0",
     "pyyaml>=6.0",
 ]

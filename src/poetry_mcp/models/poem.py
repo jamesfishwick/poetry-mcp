@@ -189,6 +189,22 @@ class Poem(BaseModel):
         normalized = [tag.lower().strip() for tag in v if tag.strip()]
         return list(dict.fromkeys(normalized))  # Preserve order, remove dupes
 
+    @field_validator("created_at", "updated_at", mode="after")
+    @classmethod
+    def ensure_aware(cls, v: datetime) -> datetime:
+        """Hold timestamps timezone-aware so every Poem agrees on one representation.
+
+        The JSON schema for these fields says format "date-time" (RFC 3339, offset
+        required). A naive datetime serializes without an offset, and MCP clients
+        that validate structuredContent against the tool's outputSchema (the
+        TypeScript SDK does, with ajv-formats) then reject the whole get_poem
+        response. Normalizing at construction, not at serialization, also keeps
+        every Poem comparable: the sorts in catalog_tools and Catalog.get_stats
+        compare these fields directly, and Python raises TypeError on a naive vs
+        aware mix. Naive values are assumed to be local wall time.
+        """
+        return v if v.tzinfo is not None else v.astimezone()
+
     @field_validator("qualities")
     @classmethod
     def validate_qualities(cls, v: dict[str, int] | None) -> dict[str, int] | None:
