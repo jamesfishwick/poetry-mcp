@@ -422,6 +422,12 @@ class Catalog:
                 logger.debug(f"Skipping {md_file.name} (in excluded dir: {first_dir})")
                 continue
 
+            # Skip hidden directories at any depth (.stversions, .trash, .obsidian).
+            # These hold sync-tool backups and app state, never poems.
+            if any(part.startswith(".") for part in rel_path.parts[:-1]):
+                logger.debug(f"Skipping {md_file.name} (in hidden dir)")
+                continue
+
             markdown_files.append(md_file)
 
         logger.info(

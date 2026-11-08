@@ -446,6 +446,22 @@ Unfinished work"""
         assert len(collisions) == 1
         assert "untitled" in collisions[0]
 
+    def test_sync_skips_hidden_dirs_at_any_depth(self, tmp_path):
+        """Dot-dirs (e.g. Syncthing's .stversions) are never poems, even nested."""
+        catalog_dir = tmp_path / "vault" / "catalog"
+        nested = catalog_dir / "phone-poetry" / ".stversions"
+        nested.mkdir(parents=True)
+        (catalog_dir / ".trash").mkdir()
+        body = "---\nform: free_verse\n---\n\n{t}"
+        (catalog_dir / "phone-poetry" / "Real.md").write_text(body.format(t="real"))
+        (nested / "Real~20250825-215745.md").write_text(body.format(t="old"))
+        (catalog_dir / ".trash" / "Gone.md").write_text(body.format(t="gone"))
+
+        result = Catalog(vault_root=tmp_path / "vault").sync()
+
+        assert result.total_poems == 1
+        assert result.warnings == []
+
     def test_second_nonforce_sync_of_unchanged_file_is_quiet(self, vault_with_poems):
         """Re-syncing unchanged files (no force) must not warn or double-count."""
         catalog = Catalog(vault_root=vault_with_poems)
