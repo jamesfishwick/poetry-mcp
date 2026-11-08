@@ -13,8 +13,9 @@ vault:
   influences_dir: influences
 
   # Optional: Exclude specific catalog subdirectories from scanning
-  # Use this for directories you want the server to ignore completely
-  # Example: exclude_catalog_dirs: ['drafts', 'archive', 'trash']
+  # Matches the first path segment under catalog/ only. Dot-prefixed directories
+  # and files (.stversions, .trash, ._sidecars) are skipped automatically at any depth.
+  # Example: exclude_catalog_dirs: ['drafts', 'archive']
   exclude_catalog_dirs: []
 
   # Optional: Custom states beyond the standard ones

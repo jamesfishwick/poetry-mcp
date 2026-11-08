@@ -37,7 +37,11 @@ class VaultConfig(BaseModel):
 
     exclude_catalog_dirs: list[str] = Field(
         default_factory=list,
-        description="Catalog subdirectories to exclude from scanning (e.g., ['drafts', 'archive'])",
+        description=(
+            "Catalog subdirectories to exclude from scanning (e.g., ['drafts', 'archive']). "
+            "Matches the first path segment under catalog/ only. Dot-prefixed directories "
+            "and files are always skipped at any depth, so they never need listing here."
+        ),
     )
 
     custom_states: list[str] = Field(
