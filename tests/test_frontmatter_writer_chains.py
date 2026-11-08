@@ -8,12 +8,14 @@ The round-trip test at the end parses the written file through
 parse_poem_file, which is the read the chain tools depend on after a sync.
 """
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
+from poetry_mcp.parsers.frontmatter_parser import parse_poem_file
 from poetry_mcp.writers.frontmatter_writer import update_poem_chains
 
 # ---------------------------------------------------------------------------
@@ -424,3 +426,267 @@ def test_chain_positions_written_sorted_by_chain_id(tmp_path):
     positions = read_frontmatter(poem)["chain_positions"]
     assert list(positions.keys()) == sorted(positions.keys()), f"keys unsorted: {positions}"
     assert positions == {CHAIN_STONE: POSITION_FIRST, CHAIN_WATER: POSITION_FIFTH}
+
+
+# ---------------------------------------------------------------------------
+# Preservation of everything else
+# ---------------------------------------------------------------------------
+
+
+def test_preserves_unrelated_frontmatter_and_body_bytes(tmp_path):
+    # Arrange
+    poem = write_poem(tmp_path, frontmatter={"chains": [CHAIN_WATER]})
+    _, original_body = read_frontmatter_and_body(poem)
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_STONE], create_backup_file=False)
+
+    # Assert
+    assert result.success, result.error
+    frontmatter, body = read_frontmatter_and_body(poem)
+    assert body == original_body, "poem body must survive byte-for-byte"
+    assert body == POEM_BODY
+    for key, value in UNRELATED_FRONTMATTER.items():
+        assert frontmatter[key] == value, f"frontmatter key {key!r} was changed"
+
+
+def test_updated_at_is_rewritten_as_iso_timestamp(tmp_path):
+    # Arrange
+    poem = write_poem(tmp_path, frontmatter={})
+    before = datetime.now()
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_WATER], create_backup_file=False)
+
+    # Assert
+    assert result.success, result.error
+    written = read_frontmatter(poem)["updated_at"]
+    assert written != ORIGINAL_UPDATED_AT, "updated_at must be stamped on every chain write"
+    assert datetime.fromisoformat(written) >= before, f"updated_at {written} predates the write"
+
+
+# ---------------------------------------------------------------------------
+# Backups
+# ---------------------------------------------------------------------------
+
+
+def test_backup_created_with_original_bytes_when_requested(tmp_path):
+    # Arrange
+    poem = write_poem(tmp_path, frontmatter={})
+    original_bytes = poem.read_bytes()
+    backup = backup_path_for(poem)
+    assert not backup.exists(), "precondition: no backup before the write"
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_WATER], create_backup_file=True)
+
+    # Assert
+    assert result.success, result.error
+    assert result.backup_path == str(backup)
+    assert backup.exists(), f"backup missing at {backup}"
+    assert backup.read_bytes() == original_bytes, "backup must hold the pre-write bytes"
+    assert poem.read_bytes() != original_bytes, "the poem itself must have changed"
+
+
+def test_no_backup_when_create_backup_file_false(tmp_path):
+    # Arrange
+    poem = write_poem(tmp_path, frontmatter={})
+    backup = backup_path_for(poem)
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_WATER], create_backup_file=False)
+
+    # Assert
+    assert result.success, result.error
+    assert result.backup_path is None
+    assert not backup.exists(), f"backup written at {backup} despite create_backup_file=False"
+
+
+# ---------------------------------------------------------------------------
+# Failure paths: return a failed result, never raise, never touch the file
+# ---------------------------------------------------------------------------
+
+
+def test_missing_file_returns_failed_result(tmp_path):
+    # Arrange
+    missing = tmp_path / "does-not-exist.md"
+
+    # Act
+    result = update_poem_chains(missing, chains_to_add=[CHAIN_WATER])
+
+    # Assert
+    assert not result.success
+    assert result.error is not None and "not found" in result.error.lower(), result.error
+    assert result.file_path == str(missing)
+    assert result.backup_path is None
+    assert not missing.exists(), "a failed update must not create the file"
+    # Property fallbacks on a result with no final state recorded
+    assert result.updated_chains == [], "falls back to chains_added, which is empty"
+    assert result.updated_positions is None
+
+
+def test_unclosed_frontmatter_returns_failed_result_and_leaves_file_alone(tmp_path):
+    # Arrange
+    poem = tmp_path / POEM_FILENAME
+    poem.write_text("---\nstate: completed\nchains:\n- water-sequence\n\nNo closing fence\n")
+    original_bytes = poem.read_bytes()
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_STONE], create_backup_file=True)
+
+    # Assert
+    assert not result.success
+    assert result.error is not None and "unclosed frontmatter" in result.error.lower(), result.error
+    assert poem.read_bytes() == original_bytes, "malformed file must not be rewritten"
+    assert not backup_path_for(poem).exists(), "no backup should be taken before parsing succeeds"
+
+
+def test_invalid_yaml_frontmatter_returns_failed_result(tmp_path):
+    # Arrange
+    poem = tmp_path / POEM_FILENAME
+    poem.write_text("---\nstate: [unterminated\nchains: {bad\n---\n\n# Broken\n")
+    original_bytes = poem.read_bytes()
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_WATER], create_backup_file=False)
+
+    # Assert
+    assert not result.success
+    assert result.error is not None and "invalid yaml" in result.error.lower(), result.error
+    assert poem.read_bytes() == original_bytes, "malformed file must not be rewritten"
+
+
+# ---------------------------------------------------------------------------
+# Result properties
+# ---------------------------------------------------------------------------
+
+
+def test_result_properties_report_final_state_not_the_delta(tmp_path):
+    # Arrange
+    poem = write_poem(
+        tmp_path,
+        frontmatter={"chains": [CHAIN_WATER], "chain_positions": {CHAIN_WATER: POSITION_FIRST}},
+    )
+
+    # Act: add one chain and position it; the pre-existing chain is untouched
+    result = update_poem_chains(
+        poem,
+        chains_to_add=[CHAIN_STONE],
+        position_updates={CHAIN_STONE: POSITION_THIRD},
+        create_backup_file=False,
+    )
+
+    # Assert: deltas
+    assert result.chains_added == [CHAIN_STONE]
+    assert result.positions_updated == {CHAIN_STONE: POSITION_THIRD}, (
+        "positions_updated is the delta, only what this call set"
+    )
+    # Assert: final state, matching what is on disk
+    frontmatter = read_frontmatter(poem)
+    assert result.updated_chains == [CHAIN_STONE, CHAIN_WATER]
+    assert result.updated_chains == frontmatter["chains"]
+    assert result.updated_positions == {CHAIN_STONE: POSITION_THIRD, CHAIN_WATER: POSITION_FIRST}
+    assert result.updated_positions == frontmatter["chain_positions"]
+
+
+def test_positions_updated_is_none_when_no_position_was_set(tmp_path):
+    # Arrange
+    poem = write_poem(tmp_path, frontmatter={})
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_WATER], create_backup_file=False)
+
+    # Assert
+    assert result.success, result.error
+    assert result.positions_updated is None
+    assert result.updated_positions is None
+
+
+# ---------------------------------------------------------------------------
+# Round trip through the parser the chain tools read with
+# ---------------------------------------------------------------------------
+
+
+def test_written_file_round_trips_through_parse_poem_file(tmp_path):
+    # Arrange
+    poem = write_poem(tmp_path, frontmatter={"chains": [CHAIN_STONE]})
+
+    # Act
+    result = update_poem_chains(
+        poem,
+        chains_to_add=[CHAIN_WATER],
+        position_updates={CHAIN_WATER: POSITION_THIRD},
+        create_backup_file=False,
+    )
+    parsed = parse_poem_file(poem, vault_root=tmp_path)
+
+    # Assert
+    assert result.success, result.error
+    assert parsed.chains == [CHAIN_STONE, CHAIN_WATER]
+    assert parsed.chain_positions == {CHAIN_WATER: POSITION_THIRD}
+    assert parsed.chains == result.updated_chains, "parser and writer disagree on chains"
+    assert parsed.chain_positions == result.updated_positions, (
+        "parser and writer disagree on positions"
+    )
+    assert parsed.state == UNRELATED_FRONTMATTER["state"]
+
+
+def test_loose_chain_round_trips_with_no_positions(tmp_path):
+    # Arrange
+    poem = write_poem(tmp_path, frontmatter={})
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_WATER], create_backup_file=False)
+    parsed = parse_poem_file(poem, vault_root=tmp_path)
+
+    # Assert
+    assert result.success, result.error
+    assert parsed.chains == [CHAIN_WATER]
+    assert parsed.chain_positions is None, "a loose chain must parse back with no positions"
+
+
+# ---------------------------------------------------------------------------
+# Known defects, demonstrated and left in place
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "update_poem_chains normalizes the ids it is given but not the ids already in "
+        "frontmatter. A hand-authored 'Water Sequence' is read by Poem as 'water-sequence', "
+        "so the chain tools ask to remove 'water-sequence', which never matches, and the "
+        "poem stays in the chain while the result reports success."
+    ),
+)
+def test_remove_matches_unnormalized_chain_already_in_frontmatter(tmp_path):
+    # Arrange: chain id as a human might type it in Obsidian
+    poem = write_poem(tmp_path, frontmatter={"chains": ["Water Sequence"]})
+
+    # Act
+    result = update_poem_chains(poem, chains_to_remove=[CHAIN_WATER], create_backup_file=False)
+
+    # Assert
+    assert result.success, result.error
+    assert result.chains_removed == [CHAIN_WATER]
+    assert read_frontmatter(poem)["chains"] == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "A 'chains:' key with a null value (an emptied list in a hand edit) makes "
+        "set(frontmatter.get('chains', [])) raise TypeError, which the broad except turns "
+        "into a failed result. parse_poem_file treats the same value as an empty list."
+    ),
+)
+def test_null_chains_key_is_treated_as_empty(tmp_path):
+    # Arrange
+    poem = write_poem(tmp_path, frontmatter={"chains": None})
+
+    # Act
+    result = update_poem_chains(poem, chains_to_add=[CHAIN_WATER], create_backup_file=False)
+
+    # Assert
+    assert result.success, result.error
+    assert read_frontmatter(poem)["chains"] == [CHAIN_WATER]
