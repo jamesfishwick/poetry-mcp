@@ -440,14 +440,22 @@ class Catalog:
                 (i for i, part in enumerate(rel_path.parts) if part.startswith(".")), None
             )
             if hidden_at is not None:
-                hidden_counts["/".join(rel_path.parts[: hidden_at + 1])] += 1
+                # Key hidden dirs by the dir, and hidden files by their parent plus
+                # a marker, so a vault full of ._ sidecars logs one line per folder.
+                if hidden_at == len(rel_path.parts) - 1:
+                    parent = "/".join(rel_path.parts[:hidden_at])
+                    key = f"{parent}/.* files" if parent else ".* files"
+                else:
+                    key = "/".join(rel_path.parts[: hidden_at + 1])
+                hidden_counts[key] += 1
                 logger.debug(f"Skipping {rel_path} (hidden path component)")
                 continue
 
             markdown_files.append(md_file)
 
         for hidden_prefix, count in sorted(hidden_counts.items()):
-            logger.info(f"Skipped {count} markdown files under hidden path {hidden_prefix}")
+            noun = "file" if count == 1 else "files"
+            logger.info(f"Skipped {count} markdown {noun} under hidden path {hidden_prefix}")
         logger.info(
             f"Found {len(markdown_files)} markdown files "
             f"(excluded {excluded_count} via exclude_catalog_dirs, "
