@@ -10,6 +10,7 @@ representation in memory), not that message. See Poem.ensure_aware.
 """
 
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -84,14 +85,19 @@ def test_parser_produces_aware_timestamps_for_the_right_instant(tmp_path: Path):
     catalog.mkdir()
     poem_file = catalog / "no-frontmatter.md"
     poem_file.write_text("\nONE LINE\nTWO LINE\n", encoding="utf-8")
+    # Push mtime an hour behind ctime so a ctime/mtime mix-up cannot pass.
+    now = poem_file.stat().st_mtime
+    os.utime(poem_file, (now, now - 3600))
 
     poem = parse_poem_file(poem_file, tmp_path)
 
     stat = poem_file.stat()
     assert poem.created_at.tzinfo is not None
     assert poem.updated_at.tzinfo is not None
-    assert poem.created_at.timestamp() == pytest.approx(stat.st_ctime)
-    assert poem.updated_at.timestamp() == pytest.approx(stat.st_mtime)
+    # Absolute tolerance only: pytest.approx's default relative 1e-6 on an epoch
+    # near 1.8e9 is about half an hour, which would hide a ctime/mtime swap.
+    assert poem.created_at.timestamp() == pytest.approx(stat.st_ctime, rel=0, abs=1e-3)
+    assert poem.updated_at.timestamp() == pytest.approx(stat.st_mtime, rel=0, abs=1e-3)
 
 
 def test_parsed_and_constructed_poems_sort_together(tmp_path: Path):
