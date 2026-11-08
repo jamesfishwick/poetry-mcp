@@ -161,7 +161,7 @@ This MCP server follows the **data provider** pattern:
 - **Quality Tools:** black, ruff, mypy
 - **CI/CD:** Ready for integration with GitHub Actions
 
-See [TEST_STATUS.md](TEST_STATUS.md) for detailed test suite information.
+The suite runs on every push and pull request through GitHub Actions on Python 3.10 and 3.12, and `main` requires both jobs to pass. Run it locally with `make test`, or `uv run pytest --cov=poetry_mcp` for a coverage report.
 
 ## Development Setup
 
@@ -253,8 +253,7 @@ tests/                   # 343 tests, 100% pass rate
 docs/
 ├── ARCHITECTURE.md           # Tool/server layering + conventions (read before editing tools)
 ├── FRONTMATTER_SCHEMA.md     # Frontmatter property definitions
-├── IMPLEMENTATION_CHECKLIST.md  # Development progress tracking
-└── TEST_STATUS.md            # Test suite status and coverage
+└── IMPLEMENTATION_CHECKLIST.md  # Development progress tracking
 ```
 
 ## Configuration
@@ -596,7 +595,7 @@ _Track submissions to literary venues with auto-generated venue views_
 - [ ] **Performance Features** - File watching, hot reload, batch operations
 - [x] **Additional Coverage** - 85% target achieved ✅
 
-See [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) and [TEST_STATUS.md](TEST_STATUS.md) for detailed progress tracking.
+See [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) for detailed progress tracking.
 
 ## Data Synchronization
 

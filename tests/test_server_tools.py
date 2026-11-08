@@ -1,12 +1,21 @@
 """Tests for server initialization and catalog wrapper functions."""
 
-from unittest.mock import Mock, patch
-
 import pytest
 
 from poetry_mcp.catalog.catalog import Catalog
 from poetry_mcp.models.results import CatalogStats, SyncResult
 from poetry_mcp.server import get_catalog
+from tests.conftest import make_config, patched_config
+
+# Every test here drives get_catalog(), which caches on a module global, so
+# each one starts and ends with the server singletons cleared.
+pytestmark = pytest.mark.usefixtures("reset_server_globals")
+
+# The test vault below holds exactly these two poems, both completed.
+VAULT_POEM_COUNT = 2
+WATER_POEM_ID = "poem1"
+FIRE_POEM_ID = "poem2"
+WATER_POEM_TITLE = "Test Poem One"
 
 
 @pytest.fixture
@@ -18,8 +27,8 @@ def test_vault(tmp_path):
     completed_dir.mkdir(parents=True)
 
     # Create test poems
-    (completed_dir / "poem1.md").write_text(
-        """---
+    (completed_dir / f"{WATER_POEM_ID}.md").write_text(
+        f"""---
 state: completed
 form: free_verse
 tags:
@@ -27,13 +36,13 @@ tags:
   - nature
 ---
 
-# Test Poem One
+# {WATER_POEM_TITLE}
 
 Water flows through the valley
 Clear and pure and cold"""
     )
 
-    (completed_dir / "poem2.md").write_text(
+    (completed_dir / f"{FIRE_POEM_ID}.md").write_text(
         """---
 state: completed
 form: american_sentence
@@ -50,26 +59,25 @@ Fire burns bright in the darkness of the winter night alone"""
     return vault_root
 
 
+@pytest.fixture
+def synced_catalog(test_vault, reset_server_globals):
+    """The server's catalog, built from a real config over test_vault and synced.
+
+    Depends on reset_server_globals explicitly so the clear runs before the
+    build and the teardown clear runs after the patch is lifted.
+    """
+    with patched_config(make_config(test_vault)):
+        catalog = get_catalog()
+        catalog.sync()
+        yield catalog
+
+
 class TestGetCatalog:
     """Test get_catalog() function."""
 
     def test_get_catalog_creates_instance(self, test_vault):
         """Test that get_catalog creates and caches catalog instance."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
-
-            # Reset global catalog
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
+        with patched_config(make_config(test_vault)):
             # First call should create catalog
             catalog1 = get_catalog()
             assert catalog1 is not None
@@ -77,26 +85,21 @@ class TestGetCatalog:
 
             # Second call should return same instance
             catalog2 = get_catalog()
-            assert catalog2 is catalog1
+            assert catalog2 is catalog1, "get_catalog() must cache on the module global"
 
     def test_get_catalog_with_custom_config(self, test_vault):
         """Test get_catalog with custom states and exclusions."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=["archive"],
-                    custom_states=["experimental"],
-                    custom_forms=["pantoum"],
-                )
-            )
+        config = make_config(
+            test_vault,
+            exclude_catalog_dirs=["archive"],
+            custom_states=["experimental"],
+            custom_forms=["pantoum"],
+        )
 
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
+        with patched_config(config):
             catalog = get_catalog()
-            assert catalog.vault_root == test_vault
+
+        assert catalog.vault_root == test_vault
 
 
 class TestCatalogSync:
@@ -104,358 +107,123 @@ class TestCatalogSync:
 
     def test_catalog_sync_success(self, test_vault):
         """Test successful catalog sync via get_catalog."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
-
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
+        with patched_config(make_config(test_vault)):
             catalog = get_catalog()
             result = catalog.sync(force_rescan=False)
 
-            assert isinstance(result, SyncResult)
-            assert result.total_poems == 2
-            assert result.new_poems == 2
+        assert isinstance(result, SyncResult)
+        assert result.total_poems == VAULT_POEM_COUNT
+        assert result.new_poems == VAULT_POEM_COUNT
 
     def test_catalog_sync_force_rescan(self, test_vault):
         """Test sync with force_rescan=True."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
-
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
+        with patched_config(make_config(test_vault)):
             catalog = get_catalog()
-            # First sync
             catalog.sync(force_rescan=False)
 
-            # Force rescan
             result = catalog.sync(force_rescan=True)
-            assert result.total_poems == 2
-            assert result.new_poems == 2  # All counted as new
+
+        assert result.total_poems == VAULT_POEM_COUNT
+        assert result.new_poems == VAULT_POEM_COUNT, "a forced rescan counts every poem as new"
 
 
 class TestCatalogGetPoem:
     """Test poem retrieval operations through get_catalog."""
 
-    def test_get_poem_by_id(self, test_vault):
+    def test_get_poem_by_id(self, synced_catalog):
         """Test getting poem by ID."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poem = synced_catalog.index.get_by_id(WATER_POEM_ID)
 
-            import poetry_mcp.server as server_module
+        assert poem is not None
+        assert poem.id == WATER_POEM_ID
+        assert poem.title == WATER_POEM_TITLE
 
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poem = catalog.index.get_by_id("poem1")
-
-            assert poem is not None
-            assert poem.id == "poem1"
-            assert poem.title == "Test Poem One"
-
-    def test_get_poem_by_title(self, test_vault):
+    def test_get_poem_by_title(self, synced_catalog):
         """Test getting poem by title."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poem = synced_catalog.index.get_by_title(WATER_POEM_TITLE)
 
-            import poetry_mcp.server as server_module
+        assert poem is not None
+        assert poem.id == WATER_POEM_ID
 
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poem = catalog.index.get_by_title("Test Poem One")
-
-            assert poem is not None
-            assert poem.id == "poem1"
-
-    def test_get_poem_not_found(self, test_vault):
+    def test_get_poem_not_found(self, synced_catalog):
         """Test getting nonexistent poem returns None."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poem = synced_catalog.index.get_by_id("nonexistent")
 
-            import poetry_mcp.server as server_module
+        assert poem is None
 
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poem = catalog.index.get_by_id("nonexistent")
-
-            assert poem is None
-
-    def test_poem_has_content(self, test_vault):
+    def test_poem_has_content(self, synced_catalog):
         """Test poem contains content after sync."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poem = synced_catalog.index.get_by_id(WATER_POEM_ID)
 
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poem = catalog.index.get_by_id("poem1")
-
-            assert poem is not None
-            assert poem.id == "poem1"
-            assert "Water flows" in poem.content
+        assert poem is not None
+        assert poem.id == WATER_POEM_ID
+        assert "Water flows" in poem.content
 
 
 class TestCatalogSearch:
     """Test catalog search operations."""
 
-    def test_search_poems_by_query(self, test_vault):
+    def test_search_poems_by_query(self, synced_catalog):
         """Test searching poems by text query."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poems = synced_catalog.index.search_content("water")
 
-            import poetry_mcp.server as server_module
+        assert [p.id for p in poems] == [WATER_POEM_ID]
 
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poems = catalog.index.search_content("water")
-
-            assert len(poems) == 1
-            assert poems[0].id == "poem1"
-
-    def test_search_poems_by_state(self, test_vault):
+    def test_search_poems_by_state(self, synced_catalog):
         """Test searching poems by state."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poems = synced_catalog.index.get_by_state("completed")
 
-            import poetry_mcp.server as server_module
+        assert len(poems) == VAULT_POEM_COUNT, f"got {[p.id for p in poems]}"
 
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poems = catalog.index.get_by_state("completed")
-
-            assert len(poems) == 2
-
-    def test_search_poems_by_form(self, test_vault):
+    def test_search_poems_by_form(self, synced_catalog):
         """Test searching poems by form."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poems = synced_catalog.index.get_by_form("american_sentence")
 
-            import poetry_mcp.server as server_module
+        assert [p.id for p in poems] == [FIRE_POEM_ID]
 
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poems = catalog.index.get_by_form("american_sentence")
-
-            assert len(poems) == 1
-            assert poems[0].id == "poem2"
-
-    def test_search_all_poems(self, test_vault):
+    def test_search_all_poems(self, synced_catalog):
         """Test accessing all poems."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poems = synced_catalog.index.all_poems
 
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poems = catalog.index.all_poems
-
-            assert len(poems) == 2
+        assert len(poems) == VAULT_POEM_COUNT, f"got {[p.id for p in poems]}"
 
 
 class TestCatalogTagOperations:
     """Test catalog tag-based operations."""
 
-    def test_find_by_single_tag(self, test_vault):
+    def test_find_by_single_tag(self, synced_catalog):
         """Test finding poems with single tag."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poems = synced_catalog.index.get_by_tag("water")
 
-            import poetry_mcp.server as server_module
+        assert [p.id for p in poems] == [WATER_POEM_ID]
 
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poems = catalog.index.get_by_tag("water")
-
-            assert len(poems) == 1
-            assert poems[0].id == "poem1"
-
-    def test_find_by_multiple_tags_any(self, test_vault):
+    def test_find_by_multiple_tags_any(self, synced_catalog):
         """Test finding poems with any of multiple tags."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poems = synced_catalog.index.get_by_tags(tags=["water", "fire"], match_mode="any")
 
-            import poetry_mcp.server as server_module
+        assert len(poems) == VAULT_POEM_COUNT, f"got {[p.id for p in poems]}"
 
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poems = catalog.index.get_by_tags(tags=["water", "fire"], match_mode="any")
-
-            assert len(poems) == 2
-
-    def test_find_by_multiple_tags_all(self, test_vault):
+    def test_find_by_multiple_tags_all(self, synced_catalog):
         """Test finding poems with all specified tags."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        poems = synced_catalog.index.get_by_tags(tags=["water", "nature"], match_mode="all")
 
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            poems = catalog.index.get_by_tags(tags=["water", "nature"], match_mode="all")
-
-            assert len(poems) == 1
-            assert poems[0].id == "poem1"
+        assert [p.id for p in poems] == [WATER_POEM_ID]
 
 
 class TestCatalogStats:
     """Test catalog statistics operations."""
 
-    def test_get_catalog_stats(self, test_vault):
+    def test_get_catalog_stats(self, synced_catalog):
         """Test getting catalog statistics."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
+        stats = synced_catalog.get_stats()
 
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
-            catalog = get_catalog()
-            catalog.sync()
-            stats = catalog.get_stats()
-
-            assert isinstance(stats, CatalogStats)
-            assert stats.total_poems == 2
-            assert stats.by_state["completed"] == 2
+        assert isinstance(stats, CatalogStats)
+        assert stats.total_poems == VAULT_POEM_COUNT
+        assert stats.by_state["completed"] == VAULT_POEM_COUNT
 
     def test_catalog_has_vault_root(self, test_vault):
         """Test catalog exposes vault root for server info."""
-        with patch("poetry_mcp.server.load_config") as mock_config:
-            mock_config.return_value = Mock(
-                vault=Mock(
-                    path=test_vault,
-                    exclude_catalog_dirs=[],
-                    custom_states=[],
-                    custom_forms=[],
-                )
-            )
-
-            import poetry_mcp.server as server_module
-
-            server_module.catalog = None
-
+        with patched_config(make_config(test_vault)):
             catalog = get_catalog()
-            assert catalog.vault_root == test_vault
+
+        assert catalog.vault_root == test_vault

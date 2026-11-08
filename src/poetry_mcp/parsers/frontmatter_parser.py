@@ -117,6 +117,14 @@ def parse_poem_file(
     if isinstance(published, dict):
         published = [published]  # Tolerate a single mapping instead of a list
 
+    # Chain membership. The chain tools persist these two keys through
+    # update_poem_chains and then re-sync the catalog expecting to read them
+    # back. Until this read existed, every chain vanished on the next sync.
+    chains = frontmatter.get("chains") or []
+    if isinstance(chains, str):
+        chains = [chains]
+    chain_positions = frontmatter.get("chain_positions") or None
+
     # Build Poem object
     try:
         poem = Poem(
@@ -136,6 +144,8 @@ def parse_poem_file(
             content=poem_content,  # Include full content
             qualities=qualities,  # Include quality scores if present
             published=published,  # Prior publications, if any
+            chains=chains,
+            chain_positions=chain_positions,
         )
     except Exception as e:
         raise FrontmatterParseError(f"Failed to create Poem object for {file_path}: {e}")
