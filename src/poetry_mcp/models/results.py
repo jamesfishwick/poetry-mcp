@@ -19,8 +19,9 @@ class SyncResult(BaseModel):
     """
     Result from sync_catalog operation.
 
-    Reports statistics about catalog synchronization:
-    how many poems were discovered, added, updated, or skipped.
+    Reports statistics about catalog synchronization: how many poems were
+    discovered, added, updated, skipped on parse errors, removed because their
+    file was not found, and how many files were ignored before parsing.
     """
 
     total_poems: int = Field(..., description="Total number of poems in catalog after sync")
@@ -30,6 +31,23 @@ class SyncResult(BaseModel):
     updated_poems: int = Field(..., description="Number of existing poems with updated metadata")
 
     skipped_poems: int = Field(default=0, description="Number of poems skipped due to parse errors")
+
+    removed_poems: int = Field(
+        default=0,
+        description=(
+            "Number of indexed poems removed because their file was not seen this sync "
+            "(deleted, moved under a hidden or excluded path, or no longer parseable). "
+            "Always 0 on a force rescan, which clears the index first."
+        ),
+    )
+
+    ignored_files: int = Field(
+        default=0,
+        description=(
+            "Number of markdown files skipped before parsing: under exclude_catalog_dirs "
+            "or under a dot-prefixed path. Not poems, never counted in total_poems."
+        ),
+    )
 
     warnings: list[str] = Field(
         default_factory=list, description="List of warning messages encountered during sync"
@@ -44,6 +62,8 @@ class SyncResult(BaseModel):
                 "new_poems": 5,
                 "updated_poems": 12,
                 "skipped_poems": 2,
+                "removed_poems": 1,
+                "ignored_files": 17,
                 "warnings": [
                     "poem_without_frontmatter.md: missing frontmatter, used defaults",
                     "broken_file.md: invalid YAML, skipped",

@@ -473,6 +473,10 @@ class Catalog:
         # left in the index from a poem that has since MOVED is not (that entry is
         # absent from the current pass and add_poem harmlessly evicts it).
         seen_this_sync: dict[str, str] = {}
+        # Every file_path parsed this pass, used below to evict index entries whose
+        # file is gone (deleted, moved under a hidden or excluded path, or no longer
+        # parseable). Without this a non-force sync kept ghosts forever.
+        seen_paths: set[str] = set()
 
         # Parse each file
         for md_file in markdown_files:
@@ -512,6 +516,7 @@ class Catalog:
                     new_poems += 1
 
                 seen_this_sync[poem.id] = poem.file_path
+                seen_paths.add(poem.file_path)
                 # Always add the poem (evicts any prior version with this ID)
                 self.index.add_poem(poem)
 
@@ -526,6 +531,21 @@ class Catalog:
                 warnings.append(warning_msg)
                 logger.error(warning_msg)
 
+        # Evict entries whose file was not seen this pass. force_rescan reaches the
+        # same state through index.clear() above, so only the non-force path needs
+        # this. Logged at INFO per poem because a vanished poem is something the
+        # operator should be able to see without turning on debug.
+        removed_poems = 0
+        if not force_rescan:
+            for poem in list(self.index.all_poems):
+                if poem.file_path not in seen_paths:
+                    self.index.remove_poem(poem)
+                    removed_poems += 1
+                    logger.info(
+                        f"Removed '{poem.id}' from index: {poem.file_path} not seen this sync"
+                    )
+
+        ignored_files = excluded_count + sum(hidden_counts.values())
         total_after = len(self.index.all_poems)
         duration = time.perf_counter() - start_time
 
@@ -536,8 +556,8 @@ class Catalog:
 
         logger.info(
             f"Catalog sync complete: {total_after} poems "
-            f"({new_poems} new, {updated_poems} updated, {skipped_poems} skipped) "
-            f"in {duration:.2f}s"
+            f"({new_poems} new, {updated_poems} updated, {skipped_poems} skipped, "
+            f"{removed_poems} removed, {ignored_files} ignored) in {duration:.2f}s"
         )
 
         return SyncResult(
@@ -545,6 +565,8 @@ class Catalog:
             new_poems=new_poems,
             updated_poems=updated_poems,
             skipped_poems=skipped_poems,
+            removed_poems=removed_poems,
+            ignored_files=ignored_files,
             warnings=warnings,
             duration_seconds=duration,
         )
