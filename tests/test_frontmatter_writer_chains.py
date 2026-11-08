@@ -646,19 +646,10 @@ def test_loose_chain_round_trips_with_no_positions(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Known defects, demonstrated and left in place
+# Existing frontmatter is normalized before matching, and null keys are empty
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "update_poem_chains normalizes the ids it is given but not the ids already in "
-        "frontmatter. A hand-authored 'Water Sequence' is read by Poem as 'water-sequence', "
-        "so the chain tools ask to remove 'water-sequence', which never matches, and the "
-        "poem stays in the chain while the result reports success."
-    ),
-)
 def test_remove_matches_unnormalized_chain_already_in_frontmatter(tmp_path):
     # Arrange: chain id as a human might type it in Obsidian
     poem = write_poem(tmp_path, frontmatter={"chains": ["Water Sequence"]})
@@ -672,14 +663,6 @@ def test_remove_matches_unnormalized_chain_already_in_frontmatter(tmp_path):
     assert read_frontmatter(poem)["chains"] == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A 'chains:' key with a null value (an emptied list in a hand edit) makes "
-        "set(frontmatter.get('chains', [])) raise TypeError, which the broad except turns "
-        "into a failed result. parse_poem_file treats the same value as an empty list."
-    ),
-)
 def test_null_chains_key_is_treated_as_empty(tmp_path):
     # Arrange
     poem = write_poem(tmp_path, frontmatter={"chains": None})

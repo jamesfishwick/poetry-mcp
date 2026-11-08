@@ -411,13 +411,23 @@ def update_poem_chains(
             backup_path = create_backup(file_path)
             result.backup_path = str(backup_path)
 
-        # Get current chains (handle missing field)
-        current_chains = set(frontmatter.get("chains", []))
-        current_positions = dict(frontmatter.get("chain_positions", {}) or {})
-
-        # Normalize chain IDs
+        # Normalize chain IDs the same way Poem.normalize_chains does, and apply
+        # it to what is already in the file as well as to the ids passed in. A
+        # hand-authored `chains: [Water Sequence]` parses to `water-sequence` on
+        # the Poem, so the chain tools ask to remove `water-sequence`; matching
+        # against the raw string missed and reported success with nothing removed.
         def normalize(chain_id: str) -> str:
             return chain_id.lower().strip().replace(" ", "-")
+
+        # Read current state. A null or missing key is an empty collection, the
+        # same reading parse_poem_file applies, and a bare string is one chain.
+        raw_chains = frontmatter.get("chains") or []
+        if isinstance(raw_chains, str):
+            raw_chains = [raw_chains]
+        current_chains = {normalize(c) for c in raw_chains if isinstance(c, str) and c.strip()}
+        current_positions = {
+            normalize(k): v for k, v in (frontmatter.get("chain_positions") or {}).items()
+        }
 
         # Add new chains
         added = []
