@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -189,18 +189,19 @@ class Poem(BaseModel):
         normalized = [tag.lower().strip() for tag in v if tag.strip()]
         return list(dict.fromkeys(normalized))  # Preserve order, remove dupes
 
-    @field_serializer("created_at", "updated_at", when_used="json")
-    def serialize_timestamp(self, v: datetime) -> datetime:
-        """Guarantee an RFC 3339 date-time on the wire.
+    @field_validator("created_at", "updated_at", mode="after")
+    @classmethod
+    def ensure_aware(cls, v: datetime) -> datetime:
+        """Hold timestamps timezone-aware so every Poem agrees on one representation.
 
-        The JSON schema for these fields says format "date-time", and a naive
-        datetime serializes without a UTC offset, which is not RFC 3339. MCP
-        clients that validate structuredContent against the tool's output
-        schema (the TypeScript SDK, so claude.ai and Claude Desktop) then reject
-        the whole get_poem response. The parser already produces aware values;
-        this covers every other constructor (tests, writers, frontmatter dates)
-        by attaching the local offset to anything naive. Python-mode dumps are
-        untouched so round-tripping through model_dump() keeps datetime objects.
+        The JSON schema for these fields says format "date-time" (RFC 3339, offset
+        required). A naive datetime serializes without an offset, and MCP clients
+        that validate structuredContent against the tool's outputSchema (the
+        TypeScript SDK does, with ajv-formats) then reject the whole get_poem
+        response. Normalizing at construction, not at serialization, also keeps
+        every Poem comparable: the sorts in catalog_tools and Catalog.get_stats
+        compare these fields directly, and Python raises TypeError on a naive vs
+        aware mix. Naive values are assumed to be local wall time.
         """
         return v if v.tzinfo is not None else v.astimezone()
 

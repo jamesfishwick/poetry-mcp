@@ -70,13 +70,10 @@ def parse_poem_file(
     # Extract title (from first # heading or fallback to filename)
     title = extract_title(poem_content, file_path)
 
-    # Get file timestamps. .astimezone() makes them timezone-aware (local
-    # offset) so they serialize as RFC 3339 date-time, which the tool output
-    # schema promises; a naive isoformat() has no offset and MCP clients that
-    # validate structured content reject the whole poem for it.
+    # Get file timestamps. Poem.ensure_aware attaches the local offset.
     stat = file_path.stat()
-    created_at = datetime.fromtimestamp(stat.st_ctime).astimezone()
-    updated_at = datetime.fromtimestamp(stat.st_mtime).astimezone()
+    created_at = datetime.fromtimestamp(stat.st_ctime)
+    updated_at = datetime.fromtimestamp(stat.st_mtime)
 
     # Compute metrics
     word_count = count_words(poem_content)
