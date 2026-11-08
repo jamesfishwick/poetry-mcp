@@ -1,9 +1,21 @@
-"""Tests for chain tools - linking poems into sequences and collections."""
+"""Tests for chain tools - linking poems into sequences and collections.
+
+The tool tests run against a real ``Catalog`` over real poem files in a
+temporary vault, synced for real, and wired through ``initialize_chain_tools``
+exactly as the server does. No catalog or writer is mocked. An earlier version
+of this file used ``Mock(spec=Catalog)`` with a no-op ``sync``, which kept these
+tests green for the whole life of a bug where the parser never read ``chains``
+or ``chain_positions`` back from frontmatter, so every chain vanished on the
+next sync. Each tool test therefore asserts on two real outcomes: the poem
+file's frontmatter after the call, and the catalog index after the real sync.
+"""
 
 from datetime import datetime
-from unittest.mock import Mock, patch
+from pathlib import Path
 
 import pytest
+import yaml
+from pydantic import ValidationError
 
 from poetry_mcp.catalog.catalog import Catalog, CatalogIndex
 from poetry_mcp.models.poem import Poem
@@ -16,404 +28,615 @@ from poetry_mcp.tools.chain_tools import (
     reorder_chain,
 )
 
+# The parser derives a poem's state from its top-level catalog folder, so this
+# folder name is what makes every test poem a "completed" poem.
+COMPLETED_FOLDER = "Completed"
+COMPLETED_STATE = "completed"
+POEM_FORM = "free_verse"
+POEM_BODY = "This is poem content."
 
-@pytest.fixture
-def sample_poem():
-    """Create a sample poem for testing."""
+# Poem ids are the slugified filename stem, so these double as filenames.
+POEM_1 = "poem-1"
+POEM_2 = "poem-2"
+POEM_3 = "poem-3"
+MISSING_POEM = "nonexistent"
 
-    def _create_poem(
-        id: str,
-        title: str = None,
-        chains: list[str] = None,
-        chain_positions: dict[str, int] = None,
-    ) -> Poem:
-        return Poem(
-            id=id,
-            title=title or id.replace("-", " ").title(),
-            file_path=f"catalog/Completed/{id}.md",
-            state="completed",
-            form="free_verse",
-            tags=["test"],
-            word_count=100,
-            line_count=20,
-            created_at=datetime(2024, 1, 1),
-            updated_at=datetime(2024, 6, 1),
-            chains=chains or [],
-            chain_positions=chain_positions,
-        )
+WATER_SEQUENCE = "water-sequence"
+UNNORMALIZED_WATER_SEQUENCE = "Water Sequence"  # normalizes to WATER_SEQUENCE
+GRIEF_CYCLE = "grief-cycle"
+GRIEF_POEMS = "grief-poems"
+WATER = "water"
+GRIEF = "grief"
+OTHER = "other"
+MISSING_CHAIN = "nonexistent"
 
-    return _create_poem
+# Fixed timestamps for in-memory Poem objects in the model and index tests.
+CREATED_AT = datetime(2024, 1, 1)
+UPDATED_AT = datetime(2024, 6, 1)
 
 
-@pytest.fixture
-def mock_catalog(sample_poem, tmp_path):
-    """Create a mock catalog with test poems."""
-    catalog = Mock(spec=Catalog)
-    catalog.vault_root = tmp_path
-    catalog.index = CatalogIndex()
+# ---------------------------------------------------------------------------
+# Factories
+# ---------------------------------------------------------------------------
 
-    # Add sample poems
-    poems = [
-        sample_poem("poem-1", "First Poem"),
-        sample_poem("poem-2", "Second Poem"),
-        sample_poem("poem-3", "Third Poem"),
-    ]
 
-    for poem in poems:
-        catalog.index.add_poem(poem)
-        # Create actual files for the poems
-        poem_path = tmp_path / poem.file_path
-        poem_path.parent.mkdir(parents=True, exist_ok=True)
-        poem_path.write_text(f"""---
-state: completed
-form: free_verse
-tags: [test]
----
+def make_poem(
+    poem_id: str,
+    title: str | None = None,
+    chains: list[str] | None = None,
+    chain_positions: dict[str, int] | None = None,
+) -> Poem:
+    """Build an in-memory Poem for model and index tests (no file involved)."""
+    return Poem(
+        id=poem_id,
+        title=title or default_title(poem_id),
+        file_path=f"catalog/{COMPLETED_FOLDER}/{poem_id}.md",
+        state=COMPLETED_STATE,
+        form=POEM_FORM,
+        tags=["test"],
+        word_count=100,
+        line_count=20,
+        created_at=CREATED_AT,
+        updated_at=UPDATED_AT,
+        chains=chains or [],
+        chain_positions=chain_positions,
+    )
 
-# {poem.title}
 
-This is poem content.
-""")
+def default_title(poem_id: str) -> str:
+    """Title the factories give a poem when none is supplied ("poem-1" -> "Poem 1")."""
+    return poem_id.replace("-", " ").title()
 
-    catalog.sync = Mock(return_value=Mock(total_poems=len(poems)))
 
+def poem_file(vault: Path, poem_id: str) -> Path:
+    """Where write_poem puts a poem with this id."""
+    return vault / "catalog" / COMPLETED_FOLDER / f"{poem_id}.md"
+
+
+def write_poem(
+    vault: Path,
+    poem_id: str,
+    title: str | None = None,
+    chains: list[str] | None = None,
+    chain_positions: dict[str, int] | None = None,
+) -> str:
+    """Write a real poem file into the vault and return its id.
+
+    The id is what the parser will derive from the filename on sync. Chains
+    and positions, when given, are declared in frontmatter the way the writer
+    would persist them, so a test can start from a poem already in a chain.
+    """
+    frontmatter: dict = {"form": POEM_FORM, "tags": ["test"]}
+    if chains:
+        frontmatter["chains"] = chains
+    if chain_positions:
+        frontmatter["chain_positions"] = chain_positions
+
+    path = poem_file(vault, poem_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"---\n{yaml.safe_dump(frontmatter, sort_keys=False)}---\n\n"
+        f"# {title or default_title(poem_id)}\n\n{POEM_BODY}\n",
+        encoding="utf-8",
+    )
+    return poem_id
+
+
+def read_frontmatter(vault: Path, poem_id: str) -> dict:
+    """Read a poem file's frontmatter straight off disk.
+
+    Deliberately bypasses the project's parser: the parser is the component
+    whose silence hid the original bug, so the file itself is the witness.
+    """
+    text = poem_file(vault, poem_id).read_text(encoding="utf-8")
+    _, block, _ = text.split("---", 2)
+    return yaml.safe_load(block) or {}
+
+
+def synced_catalog(vault: Path) -> Catalog:
+    """Build a real catalog over the vault, sync it, and wire the chain tools to it."""
+    catalog = Catalog(vault_root=vault)
+    catalog.sync()
+    initialize_chain_tools(catalog)
     return catalog
 
 
-class TestPoemChainFields:
-    """Test chain fields on Poem model."""
+def chain_ids_in_order(catalog: Catalog, chain_id: str) -> list[str]:
+    """Poem ids in a chain as the index orders them (positions first, then title)."""
+    return [poem.id for poem in catalog.index.get_by_chain(chain_id, ordered=True)]
 
-    def test_poem_with_chains(self, sample_poem):
-        """Test creating a poem with chains."""
-        poem = sample_poem(
-            "test-poem",
-            chains=["water-sequence", "grief-cycle"],
-        )
-        assert poem.chains == ["water-sequence", "grief-cycle"]
+
+@pytest.fixture
+def vault(tmp_path: Path) -> Path:
+    """An empty vault with the catalog folder the Catalog expects to scan."""
+    (tmp_path / "catalog" / COMPLETED_FOLDER).mkdir(parents=True)
+    return tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Poem model
+# ---------------------------------------------------------------------------
+
+
+class TestPoemChainFields:
+    """Chain fields on the Poem model."""
+
+    def test_poem_with_chains_has_no_positions_by_default(self):
+        # Arrange / Act
+        poem = make_poem(POEM_1, chains=[WATER_SEQUENCE, GRIEF_CYCLE])
+
+        # Assert
+        assert poem.chains == [WATER_SEQUENCE, GRIEF_CYCLE]
         assert poem.chain_positions is None
 
-    def test_poem_with_chain_positions(self, sample_poem):
-        """Test creating a poem with chain positions."""
-        poem = sample_poem(
-            "test-poem",
-            chains=["water-sequence"],
-            chain_positions={"water-sequence": 3},
-        )
-        assert poem.chains == ["water-sequence"]
-        assert poem.chain_positions == {"water-sequence": 3}
+    def test_poem_keeps_chain_positions(self):
+        # Arrange / Act
+        poem = make_poem(POEM_1, chains=[WATER_SEQUENCE], chain_positions={WATER_SEQUENCE: 3})
 
-    def test_chain_normalization(self):
-        """Test that chain IDs are normalized."""
-        poem = Poem(
-            id="test",
-            title="Test",
-            file_path="test.md",
-            state="completed",
-            form="free_verse",
-            word_count=10,
-            line_count=5,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-            chains=["Water Sequence", "GRIEF-CYCLE", "  loose  "],
-        )
-        assert poem.chains == ["water-sequence", "grief-cycle", "loose"]
+        # Assert
+        assert poem.chains == [WATER_SEQUENCE]
+        assert poem.chain_positions == {WATER_SEQUENCE: 3}
 
-    def test_chain_positions_validation(self):
-        """Test that chain positions must be positive integers."""
-        from pydantic import ValidationError
+    def test_chain_ids_are_normalized_to_lowercase_hyphenated(self):
+        # Arrange / Act
+        poem = make_poem(POEM_1, chains=["Water Sequence", "GRIEF-CYCLE", "  loose  "])
 
+        # Assert
+        assert poem.chains == [WATER_SEQUENCE, GRIEF_CYCLE, "loose"]
+
+    def test_chain_position_below_one_is_rejected(self):
+        # Arrange
+        invalid_position = 0  # positions are 1-based
+
+        # Act
         with pytest.raises(ValidationError) as exc_info:
-            Poem(
-                id="test",
-                title="Test",
-                file_path="test.md",
-                state="completed",
-                form="free_verse",
-                word_count=10,
-                line_count=5,
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-                chains=["test-chain"],
-                chain_positions={"test-chain": 0},  # Invalid: must be >= 1
-            )
+            make_poem(POEM_1, chains=[WATER], chain_positions={WATER: invalid_position})
+
+        # Assert
         assert "positive integer" in str(exc_info.value)
 
-    def test_empty_chains_default(self, sample_poem):
-        """Test that empty chains default to empty list."""
-        poem = sample_poem("test-poem")
+    def test_chains_default_to_empty(self):
+        # Arrange / Act
+        poem = make_poem(POEM_1)
+
+        # Assert
         assert poem.chains == []
         assert poem.chain_positions is None
 
 
+# ---------------------------------------------------------------------------
+# CatalogIndex
+# ---------------------------------------------------------------------------
+
+
 class TestCatalogIndexChains:
-    """Test chain indexing in CatalogIndex."""
+    """Chain indexing in CatalogIndex, on in-memory poems."""
 
-    def test_index_by_chain(self, sample_poem):
-        """Test that poems are indexed by chain."""
+    def test_add_poem_indexes_each_chain_membership(self):
+        # Arrange
         index = CatalogIndex()
 
-        poem1 = sample_poem("poem-1", chains=["water"])
-        poem2 = sample_poem("poem-2", chains=["water", "grief"])
-        poem3 = sample_poem("poem-3", chains=["grief"])
+        # Act
+        index.add_poem(make_poem(POEM_1, chains=[WATER]))
+        index.add_poem(make_poem(POEM_2, chains=[WATER, GRIEF]))
+        index.add_poem(make_poem(POEM_3, chains=[GRIEF]))
 
-        index.add_poem(poem1)
-        index.add_poem(poem2)
-        index.add_poem(poem3)
+        # Assert
+        assert set(index.by_chain[WATER]) == {POEM_1, POEM_2}
+        assert set(index.by_chain[GRIEF]) == {POEM_2, POEM_3}
 
-        assert set(index.by_chain["water"]) == {"poem-1", "poem-2"}
-        assert set(index.by_chain["grief"]) == {"poem-2", "poem-3"}
-
-    def test_get_by_chain(self, sample_poem):
-        """Test getting poems by chain."""
+    def test_get_by_chain_orders_positioned_poems_first_then_loose_by_title(self):
+        # Arrange
         index = CatalogIndex()
+        index.add_poem(make_poem(POEM_1, chains=[WATER], chain_positions={WATER: 2}))
+        index.add_poem(make_poem(POEM_2, chains=[WATER], chain_positions={WATER: 1}))
+        index.add_poem(make_poem(POEM_3, chains=[WATER]))  # no position: loose
 
-        poem1 = sample_poem("poem-1", chains=["water"], chain_positions={"water": 2})
-        poem2 = sample_poem("poem-2", chains=["water"], chain_positions={"water": 1})
-        poem3 = sample_poem("poem-3", chains=["water"])  # No position = loose
+        # Act
+        ordered_ids = [poem.id for poem in index.get_by_chain(WATER, ordered=True)]
 
-        index.add_poem(poem1)
-        index.add_poem(poem2)
-        index.add_poem(poem3)
+        # Assert
+        assert ordered_ids == [POEM_2, POEM_1, POEM_3]
 
-        # Test ordered retrieval
-        poems = index.get_by_chain("water", ordered=True)
-        assert len(poems) == 3
-        # Ordered poems first (sorted by position), then loose (sorted by title)
-        assert poems[0].id == "poem-2"  # position 1
-        assert poems[1].id == "poem-1"  # position 2
-        assert poems[2].id == "poem-3"  # no position, sorted by title
-
-    def test_get_all_chains(self, sample_poem):
-        """Test getting all chains with counts."""
+    def test_get_all_chains_counts_members_per_chain(self):
+        # Arrange
         index = CatalogIndex()
+        index.add_poem(make_poem(POEM_1, chains=[WATER, GRIEF]))
+        index.add_poem(make_poem(POEM_2, chains=[WATER]))
+        index.add_poem(make_poem(POEM_3, chains=[OTHER]))
 
-        index.add_poem(sample_poem("poem-1", chains=["water", "grief"]))
-        index.add_poem(sample_poem("poem-2", chains=["water"]))
-        index.add_poem(sample_poem("poem-3", chains=["other"]))
+        # Act
+        counts = index.get_all_chains()
 
-        chains = index.get_all_chains()
-        assert chains == {"water": 2, "grief": 1, "other": 1}
+        # Assert
+        assert counts == {WATER: 2, GRIEF: 1, OTHER: 1}
 
-    def test_clear_clears_chains(self, sample_poem):
-        """Test that clear() also clears chain index."""
+    def test_clear_empties_the_chain_index(self):
+        # Arrange
         index = CatalogIndex()
-        index.add_poem(sample_poem("poem-1", chains=["water"]))
+        index.add_poem(make_poem(POEM_1, chains=[WATER]))
+        assert index.by_chain, "precondition: chain index should be populated"
 
-        assert len(index.by_chain) > 0
+        # Act
         index.clear()
-        assert len(index.by_chain) == 0
+
+        # Assert
+        assert index.by_chain == {}
+
+
+# ---------------------------------------------------------------------------
+# create_chain
+# ---------------------------------------------------------------------------
 
 
 class TestCreateChain:
-    """Test create_chain tool."""
+    """create_chain against a real catalog."""
 
     @pytest.mark.asyncio
-    async def test_create_ordered_chain(self, mock_catalog):
-        """Test creating an ordered chain."""
-        initialize_chain_tools(mock_catalog)
+    async def test_ordered_chain_assigns_positions_and_persists_them(self, vault: Path):
+        # Arrange
+        ids = [write_poem(vault, POEM_1), write_poem(vault, POEM_2), write_poem(vault, POEM_3)]
+        catalog = synced_catalog(vault)
+        expected_positions = {POEM_1: 1, POEM_2: 2, POEM_3: 3}
 
-        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
-            mock_update.return_value = Mock(
-                success=True,
-                backup_path="/backup/path",
+        # Act
+        result = await create_chain(chain_id=WATER_SEQUENCE, poem_ids=ids, ordered=True)
+
+        # Assert: reported outcome
+        assert result["success"] is True, result.get("error")
+        assert result["chain_id"] == WATER_SEQUENCE
+        assert result["poems_affected"] == ids
+        assert result["positions"] == expected_positions
+
+        # Assert: frontmatter on disk
+        for poem_id, position in expected_positions.items():
+            frontmatter = read_frontmatter(vault, poem_id)
+            assert frontmatter["chains"] == [WATER_SEQUENCE], f"{poem_id} chains on disk"
+            assert frontmatter["chain_positions"] == {WATER_SEQUENCE: position}, (
+                f"{poem_id} position on disk"
             )
 
-            result = await create_chain(
-                chain_id="water-sequence",
-                poem_ids=["poem-1", "poem-2", "poem-3"],
-                ordered=True,
-            )
-
-            assert result["success"] is True
-            assert result["chain_id"] == "water-sequence"
-            assert len(result["poems_affected"]) == 3
-            assert result["positions"] == {"poem-1": 1, "poem-2": 2, "poem-3": 3}
+        # Assert: index after the real sync
+        assert chain_ids_in_order(catalog, WATER_SEQUENCE) == ids
 
     @pytest.mark.asyncio
-    async def test_create_loose_chain(self, mock_catalog):
-        """Test creating a loose collection (unordered)."""
-        initialize_chain_tools(mock_catalog)
+    async def test_ordered_chain_backs_up_each_poem_file(self, vault: Path):
+        # Arrange
+        ids = [write_poem(vault, POEM_1), write_poem(vault, POEM_2)]
+        synced_catalog(vault)
 
-        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
-            mock_update.return_value = Mock(
-                success=True,
-                backup_path="/backup/path",
-            )
+        # Act
+        result = await create_chain(chain_id=WATER_SEQUENCE, poem_ids=ids, ordered=True)
 
-            result = await create_chain(
-                chain_id="grief-poems",
-                poem_ids=["poem-1", "poem-2"],
-                ordered=False,
-            )
-
-            assert result["success"] is True
-            assert result["chain_id"] == "grief-poems"
-            assert result["positions"] is None
+        # Assert
+        assert result["success"] is True, result.get("error")
+        backups = [Path(p) for p in result["backup_paths"]]
+        assert [b.name for b in backups] == [f"{POEM_1}.md.bak", f"{POEM_2}.md.bak"]
+        for backup in backups:
+            assert backup.exists(), f"backup not written: {backup}"
 
     @pytest.mark.asyncio
-    async def test_create_chain_poem_not_found(self, mock_catalog):
-        """Test creating chain with non-existent poem."""
-        initialize_chain_tools(mock_catalog)
+    async def test_loose_chain_records_membership_without_positions(self, vault: Path):
+        # Arrange
+        ids = [write_poem(vault, POEM_1), write_poem(vault, POEM_2)]
+        catalog = synced_catalog(vault)
 
-        result = await create_chain(
-            chain_id="test-chain",
-            poem_ids=["nonexistent"],
-            ordered=False,
-        )
+        # Act
+        result = await create_chain(chain_id=GRIEF_POEMS, poem_ids=ids, ordered=False)
 
+        # Assert: reported outcome
+        assert result["success"] is True, result.get("error")
+        assert result["chain_id"] == GRIEF_POEMS
+        assert result["positions"] is None
+
+        # Assert: frontmatter on disk has membership and no positions key
+        for poem_id in ids:
+            frontmatter = read_frontmatter(vault, poem_id)
+            assert frontmatter["chains"] == [GRIEF_POEMS], f"{poem_id} chains on disk"
+            assert "chain_positions" not in frontmatter, f"{poem_id} should have no positions"
+
+        # Assert: index after the real sync holds both as loose members
+        members = catalog.index.get_by_chain(GRIEF_POEMS, ordered=False)
+        assert sorted(poem.id for poem in members) == ids
+        assert all(poem.chain_positions is None for poem in members)
+
+    @pytest.mark.asyncio
+    async def test_unknown_poem_fails_before_writing_anything(self, vault: Path):
+        # Arrange
+        write_poem(vault, POEM_1)
+        catalog = synced_catalog(vault)
+
+        # Act
+        result = await create_chain(chain_id=WATER, poem_ids=[POEM_1, MISSING_POEM], ordered=False)
+
+        # Assert
         assert result["success"] is False
         assert "not found" in result["error"]
+        assert "chains" not in read_frontmatter(vault, POEM_1), "poem-1 must be untouched"
+        assert catalog.index.by_chain == {}
 
     @pytest.mark.asyncio
-    async def test_chain_id_normalization(self, mock_catalog):
-        """Test that chain ID is normalized."""
-        initialize_chain_tools(mock_catalog)
+    async def test_chain_id_is_normalized_in_result_and_on_disk(self, vault: Path):
+        # Arrange
+        write_poem(vault, POEM_1)
+        catalog = synced_catalog(vault)
 
-        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
-            mock_update.return_value = Mock(success=True, backup_path=None)
+        # Act
+        result = await create_chain(
+            chain_id=UNNORMALIZED_WATER_SEQUENCE, poem_ids=[POEM_1], ordered=False
+        )
 
-            result = await create_chain(
-                chain_id="Water Sequence",  # Should normalize
-                poem_ids=["poem-1"],
-                ordered=False,
-            )
+        # Assert
+        assert result["success"] is True, result.get("error")
+        assert result["chain_id"] == WATER_SEQUENCE
+        assert read_frontmatter(vault, POEM_1)["chains"] == [WATER_SEQUENCE]
+        assert list(catalog.index.by_chain) == [WATER_SEQUENCE]
 
-            assert result["chain_id"] == "water-sequence"
+
+# ---------------------------------------------------------------------------
+# get_chain
+# ---------------------------------------------------------------------------
 
 
 class TestGetChain:
-    """Test get_chain tool."""
+    """get_chain against a real catalog."""
 
     @pytest.mark.asyncio
-    async def test_get_chain_ordered(self, mock_catalog, sample_poem):
-        """Test getting an ordered chain."""
-        # Add poems with chain membership
-        mock_catalog.index.clear()
-        mock_catalog.index.add_poem(
-            sample_poem("poem-1", chains=["water"], chain_positions={"water": 2})
-        )
-        mock_catalog.index.add_poem(
-            sample_poem("poem-2", chains=["water"], chain_positions={"water": 1})
-        )
+    async def test_ordered_chain_lists_poems_by_position(self, vault: Path):
+        # Arrange: declared on disk in reverse of their positions
+        write_poem(vault, POEM_1, chains=[WATER], chain_positions={WATER: 2})
+        write_poem(vault, POEM_2, chains=[WATER], chain_positions={WATER: 1})
+        synced_catalog(vault)
 
-        initialize_chain_tools(mock_catalog)
+        # Act
+        result = await get_chain(WATER)
 
-        result = await get_chain("water")
-
-        assert result["success"] is True
-        assert result["chain_id"] == "water"
+        # Assert
+        assert result["success"] is True, result.get("error")
+        assert result["chain_id"] == WATER
         assert result["poem_count"] == 2
         assert result["is_ordered"] is True
-        # Check poems are in order
-        assert result["poems"][0]["id"] == "poem-2"  # position 1
-        assert result["poems"][1]["id"] == "poem-1"  # position 2
+        assert result["poems"] == [
+            {
+                "id": POEM_2,
+                "title": default_title(POEM_2),
+                "state": COMPLETED_STATE,
+                "form": POEM_FORM,
+                "position": 1,
+            },
+            {
+                "id": POEM_1,
+                "title": default_title(POEM_1),
+                "state": COMPLETED_STATE,
+                "form": POEM_FORM,
+                "position": 2,
+            },
+        ]
 
     @pytest.mark.asyncio
-    async def test_get_chain_not_found(self, mock_catalog):
-        """Test getting non-existent chain."""
-        initialize_chain_tools(mock_catalog)
+    async def test_unknown_chain_is_reported_not_found(self, vault: Path):
+        # Arrange
+        write_poem(vault, POEM_1)
+        synced_catalog(vault)
 
-        result = await get_chain("nonexistent")
+        # Act
+        result = await get_chain(MISSING_CHAIN)
 
+        # Assert
         assert result["success"] is False
         assert "not found" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# list_chains
+# ---------------------------------------------------------------------------
 
 
 class TestListChains:
-    """Test list_chains tool."""
+    """list_chains against a real catalog."""
 
     @pytest.mark.asyncio
-    async def test_list_chains(self, mock_catalog, sample_poem):
-        """Test listing all chains."""
-        mock_catalog.index.clear()
-        mock_catalog.index.add_poem(sample_poem("poem-1", chains=["water", "grief"]))
-        mock_catalog.index.add_poem(sample_poem("poem-2", chains=["water"]))
-        mock_catalog.index.add_poem(sample_poem("poem-3", chains=["other"]))
+    async def test_lists_every_chain_with_member_counts(self, vault: Path):
+        # Arrange
+        write_poem(vault, POEM_1, chains=[WATER, GRIEF])
+        write_poem(vault, POEM_2, chains=[WATER])
+        write_poem(vault, POEM_3, chains=[OTHER])
+        synced_catalog(vault)
 
-        initialize_chain_tools(mock_catalog)
-
+        # Act
         result = await list_chains()
 
-        assert result["success"] is True
+        # Assert: sorted by chain id, none ordered since no positions were declared
+        assert result["success"] is True, result.get("error")
         assert result["total_chains"] == 3
+        assert result["chains"] == [
+            {"chain_id": GRIEF, "poem_count": 1, "is_ordered": False},
+            {"chain_id": OTHER, "poem_count": 1, "is_ordered": False},
+            {"chain_id": WATER, "poem_count": 2, "is_ordered": False},
+        ]
 
-        chain_dict = {c["chain_id"]: c["poem_count"] for c in result["chains"]}
-        assert chain_dict["water"] == 2
-        assert chain_dict["grief"] == 1
-        assert chain_dict["other"] == 1
+
+# ---------------------------------------------------------------------------
+# reorder_chain
+# ---------------------------------------------------------------------------
 
 
 class TestReorderChain:
-    """Test reorder_chain tool."""
+    """reorder_chain against a real catalog."""
 
     @pytest.mark.asyncio
-    async def test_reorder_chain(self, mock_catalog, sample_poem):
-        """Test reordering poems in a chain."""
-        mock_catalog.index.clear()
-        mock_catalog.index.add_poem(
-            sample_poem("poem-1", chains=["water"], chain_positions={"water": 1})
-        )
-        mock_catalog.index.add_poem(
-            sample_poem("poem-2", chains=["water"], chain_positions={"water": 2})
-        )
+    async def test_reverse_order_rewrites_positions_on_disk_and_in_index(self, vault: Path):
+        # Arrange
+        write_poem(vault, POEM_1, chains=[WATER], chain_positions={WATER: 1})
+        write_poem(vault, POEM_2, chains=[WATER], chain_positions={WATER: 2})
+        catalog = synced_catalog(vault)
+        reversed_order = [POEM_2, POEM_1]
 
-        initialize_chain_tools(mock_catalog)
+        # Act
+        result = await reorder_chain(chain_id=WATER, poem_order=reversed_order)
 
-        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
-            mock_update.return_value = Mock(success=True, backup_path=None)
+        # Assert: reported outcome
+        assert result["success"] is True, result.get("error")
+        assert result["positions"] == {POEM_2: 1, POEM_1: 2}
 
-            result = await reorder_chain(
-                chain_id="water",
-                poem_order=["poem-2", "poem-1"],  # Reverse order
-            )
+        # Assert: frontmatter on disk
+        assert read_frontmatter(vault, POEM_2)["chain_positions"] == {WATER: 1}
+        assert read_frontmatter(vault, POEM_1)["chain_positions"] == {WATER: 2}
 
-            assert result["success"] is True
-            assert result["positions"] == {"poem-2": 1, "poem-1": 2}
+        # Assert: index after the real sync
+        assert chain_ids_in_order(catalog, WATER) == reversed_order
 
     @pytest.mark.asyncio
-    async def test_reorder_chain_missing_poem(self, mock_catalog, sample_poem):
-        """Test reorder with missing poem in order list."""
-        mock_catalog.index.clear()
-        mock_catalog.index.add_poem(sample_poem("poem-1", chains=["water"]))
-        mock_catalog.index.add_poem(sample_poem("poem-2", chains=["water"]))
+    async def test_order_missing_a_member_fails_and_changes_nothing(self, vault: Path):
+        # Arrange
+        write_poem(vault, POEM_1, chains=[WATER], chain_positions={WATER: 1})
+        write_poem(vault, POEM_2, chains=[WATER], chain_positions={WATER: 2})
+        catalog = synced_catalog(vault)
 
-        initialize_chain_tools(mock_catalog)
+        # Act
+        result = await reorder_chain(chain_id=WATER, poem_order=[POEM_1])  # POEM_2 omitted
 
-        result = await reorder_chain(
-            chain_id="water",
-            poem_order=["poem-1"],  # Missing poem-2
-        )
-
+        # Assert
         assert result["success"] is False
         assert "Missing poems" in result["error"]
+        assert POEM_2 in result["error"], "error should name the omitted poem"
+        assert read_frontmatter(vault, POEM_1)["chain_positions"] == {WATER: 1}
+        assert read_frontmatter(vault, POEM_2)["chain_positions"] == {WATER: 2}
+        assert chain_ids_in_order(catalog, WATER) == [POEM_1, POEM_2]
+
+
+# ---------------------------------------------------------------------------
+# delete_chain
+# ---------------------------------------------------------------------------
 
 
 class TestDeleteChain:
-    """Test delete_chain tool."""
+    """delete_chain against a real catalog."""
 
     @pytest.mark.asyncio
-    async def test_delete_chain(self, mock_catalog, sample_poem):
-        """Test deleting a chain."""
-        mock_catalog.index.clear()
-        mock_catalog.index.add_poem(sample_poem("poem-1", chains=["water"]))
-        mock_catalog.index.add_poem(sample_poem("poem-2", chains=["water"]))
+    async def test_removes_chain_from_every_member_on_disk_and_in_index(self, vault: Path):
+        # Arrange
+        write_poem(vault, POEM_1, chains=[WATER])
+        write_poem(vault, POEM_2, chains=[WATER])
+        catalog = synced_catalog(vault)
 
-        initialize_chain_tools(mock_catalog)
+        # Act
+        result = await delete_chain(WATER)
 
-        with patch("poetry_mcp.tools.chain_tools.update_poem_chains") as mock_update:
-            mock_update.return_value = Mock(success=True, backup_path=None)
+        # Assert: reported outcome
+        assert result["success"] is True, result.get("error")
+        assert sorted(result["poems_affected"]) == [POEM_1, POEM_2]
 
-            result = await delete_chain("water")
+        # Assert: frontmatter on disk
+        for poem_id in (POEM_1, POEM_2):
+            assert read_frontmatter(vault, poem_id)["chains"] == [], f"{poem_id} still in a chain"
 
-            assert result["success"] is True
-            assert len(result["poems_affected"]) == 2
+        # Assert: index after the real sync
+        assert WATER not in catalog.index.by_chain
 
     @pytest.mark.asyncio
-    async def test_delete_nonexistent_chain(self, mock_catalog):
-        """Test deleting non-existent chain."""
-        initialize_chain_tools(mock_catalog)
+    async def test_unknown_chain_is_reported_not_found(self, vault: Path):
+        # Arrange
+        write_poem(vault, POEM_1)
+        synced_catalog(vault)
 
-        result = await delete_chain("nonexistent")
+        # Act
+        result = await delete_chain(MISSING_CHAIN)
 
+        # Assert
         assert result["success"] is False
         assert "not found" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# Flows across tools and across restarts
+# ---------------------------------------------------------------------------
+
+
+class TestChainFlows:
+    """One tool's write is the next tool's read, on the same real catalog.
+
+    These are the flows a mocked, never-synced catalog could not express, and
+    they are where the parser bug actually showed up for a user.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_then_get_sees_the_new_chain_in_order(self, vault: Path):
+        # Arrange
+        ids = [write_poem(vault, POEM_1), write_poem(vault, POEM_2), write_poem(vault, POEM_3)]
+        synced_catalog(vault)
+
+        # Act
+        created = await create_chain(chain_id=WATER_SEQUENCE, poem_ids=ids, ordered=True)
+        fetched = await get_chain(WATER_SEQUENCE)
+
+        # Assert
+        assert created["success"] is True, created.get("error")
+        assert fetched["success"] is True, fetched.get("error")
+        assert fetched["is_ordered"] is True
+        assert [(p["id"], p["position"]) for p in fetched["poems"]] == [
+            (POEM_1, 1),
+            (POEM_2, 2),
+            (POEM_3, 3),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_reorder_then_get_returns_the_new_order(self, vault: Path):
+        # Arrange
+        ids = [write_poem(vault, POEM_1), write_poem(vault, POEM_2), write_poem(vault, POEM_3)]
+        synced_catalog(vault)
+        created = await create_chain(chain_id=WATER_SEQUENCE, poem_ids=ids, ordered=True)
+        assert created["success"] is True, created.get("error")
+        new_order = [POEM_3, POEM_1, POEM_2]
+
+        # Act
+        reordered = await reorder_chain(chain_id=WATER_SEQUENCE, poem_order=new_order)
+        fetched = await get_chain(WATER_SEQUENCE)
+
+        # Assert
+        assert reordered["success"] is True, reordered.get("error")
+        assert [p["id"] for p in fetched["poems"]] == new_order
+        assert [p["position"] for p in fetched["poems"]] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_delete_then_list_shows_no_chains(self, vault: Path):
+        # Arrange
+        ids = [write_poem(vault, POEM_1), write_poem(vault, POEM_2)]
+        synced_catalog(vault)
+        created = await create_chain(chain_id=WATER, poem_ids=ids, ordered=False)
+        assert created["success"] is True, created.get("error")
+
+        # Act
+        deleted = await delete_chain(WATER)
+        listed = await list_chains()
+
+        # Assert
+        assert deleted["success"] is True, deleted.get("error")
+        assert listed["success"] is True, listed.get("error")
+        assert listed["total_chains"] == 0
+        assert listed["chains"] == []
+
+    @pytest.mark.asyncio
+    async def test_chain_survives_a_fresh_catalog_sync_on_the_same_files(self, vault: Path):
+        """The restart case: a new Catalog over the same vault must read the chain back."""
+        # Arrange
+        ids = [write_poem(vault, POEM_1), write_poem(vault, POEM_2), write_poem(vault, POEM_3)]
+        synced_catalog(vault)
+        created = await create_chain(chain_id=WATER_SEQUENCE, poem_ids=ids, ordered=True)
+        assert created["success"] is True, created.get("error")
+
+        # Act: a second process starting up over the same vault
+        restarted = Catalog(vault_root=vault)
+        restarted.sync()
+        initialize_chain_tools(restarted)
+        fetched = await get_chain(WATER_SEQUENCE)
+
+        # Assert: the index and the tool both see what the first process wrote
+        assert chain_ids_in_order(restarted, WATER_SEQUENCE) == ids
+        assert restarted.index.get_by_id(POEM_3).chain_positions == {WATER_SEQUENCE: 3}
+        assert fetched["success"] is True, fetched.get("error")
+        assert [(p["id"], p["position"]) for p in fetched["poems"]] == [
+            (POEM_1, 1),
+            (POEM_2, 2),
+            (POEM_3, 3),
+        ]
