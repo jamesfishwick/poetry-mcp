@@ -116,11 +116,17 @@ async def test_tool_structured_content_timestamps_are_rfc3339(tmp_path: Path):
 
     import poetry_mcp.server as server_module
 
-    with patch("poetry_mcp.server.load_config") as mock_config:
-        mock_config.return_value = Mock(
-            vault=Mock(path=vault, exclude_catalog_dirs=[], custom_states=[], custom_forms=[]),
-            search=Mock(default_limit=20),
-        )
+    config = Mock(
+        vault=Mock(path=vault, exclude_catalog_dirs=[], custom_states=[], custom_forms=[]),
+        search=Mock(default_limit=20),
+    )
+    # query_poems_impl imports load_config from poetry_mcp.config directly, so
+    # patching the server's name alone leaves it reading the real config (or,
+    # on a machine with none, raising "No configuration found").
+    with (
+        patch("poetry_mcp.server.load_config", return_value=config),
+        patch("poetry_mcp.tools.catalog_tools.load_config", return_value=config),
+    ):
         server_module.catalog = None
         server_module.get_catalog().sync()
         try:
