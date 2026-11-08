@@ -6,7 +6,7 @@ for fast querying. This is the core data structure for the MCP server.
 
 import logging
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from ..models.poem import Poem
@@ -334,7 +334,9 @@ class Catalog:
 
         Args:
             vault_root: Absolute path to Poetry vault root
-            exclude_dirs: Optional list of catalog subdirectories to exclude from scanning
+            exclude_dirs: Optional top-level catalog subdirectory names to skip.
+                Matches the first path segment under catalog/ only. Dot-prefixed
+                directories and files are always skipped at any depth.
             custom_states: Optional list of custom states to accept (beyond standard states)
             custom_forms: Optional list of custom forms to accept (beyond STANDARD_FORMS).
                 A form outside this set degrades to free_verse with a warning
@@ -410,8 +412,10 @@ class Catalog:
         # Get all markdown files
         all_markdown_files = list(self.catalog_dir.rglob("*.md"))
 
-        # Filter out excluded directories
+        # Filter out excluded directories and hidden path components
         markdown_files = []
+        excluded_count = 0
+        hidden_counts: Counter[str] = Counter()
         for md_file in all_markdown_files:
             # Get relative path from catalog_dir to check if it's in excluded dir
             rel_path = md_file.relative_to(self.catalog_dir)
@@ -419,19 +423,35 @@ class Catalog:
 
             # Skip if in excluded directory
             if first_dir and first_dir in self.exclude_dirs:
-                logger.debug(f"Skipping {md_file.name} (in excluded dir: {first_dir})")
+                logger.debug(f"Skipping {rel_path} (in excluded dir: {first_dir})")
+                excluded_count += 1
                 continue
 
-            # Skip hidden directories at any depth (.stversions, .trash, .obsidian).
-            # These hold sync-tool backups and app state, never poems.
-            if any(part.startswith(".") for part in rel_path.parts[:-1]):
-                logger.debug(f"Skipping {md_file.name} (in hidden dir)")
+            # Skip any .md whose path under catalog/ passes through a dot-prefixed
+            # component, at any depth, filename included. exclude_dirs matches only
+            # the first path segment, and catalog/phone-poetry is itself a
+            # Syncthing-synced Obsidian vault, so its .stversions/ (backups of
+            # earlier poem revisions) was being indexed as ghost duplicates. Dot
+            # files matter too: macOS writes ._Name.md sidecars that slug to the
+            # same id as the poem beside them. pathlib's rglob matches leading dots,
+            # so nothing upstream filters these. A dot-prefixed path never holds the
+            # canonical copy of a poem.
+            hidden_at = next(
+                (i for i, part in enumerate(rel_path.parts) if part.startswith(".")), None
+            )
+            if hidden_at is not None:
+                hidden_counts["/".join(rel_path.parts[: hidden_at + 1])] += 1
+                logger.debug(f"Skipping {rel_path} (hidden path component)")
                 continue
 
             markdown_files.append(md_file)
 
+        for hidden_prefix, count in sorted(hidden_counts.items()):
+            logger.info(f"Skipped {count} markdown files under hidden path {hidden_prefix}")
         logger.info(
-            f"Found {len(markdown_files)} markdown files (excluded {len(all_markdown_files) - len(markdown_files)} from excluded directories)"
+            f"Found {len(markdown_files)} markdown files "
+            f"(excluded {excluded_count} via exclude_catalog_dirs, "
+            f"skipped {sum(hidden_counts.values())} under hidden paths)"
         )
 
         # Sort for a deterministic scan order. rglob order is filesystem-dependent,

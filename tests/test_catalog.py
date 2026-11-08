@@ -446,21 +446,32 @@ Unfinished work"""
         assert len(collisions) == 1
         assert "untitled" in collisions[0]
 
-    def test_sync_skips_hidden_dirs_at_any_depth(self, tmp_path):
-        """Dot-dirs (e.g. Syncthing's .stversions) are never poems, even nested."""
+    def test_sync_skips_hidden_paths_at_any_depth(self, tmp_path):
+        """Sync skips dot-prefixed dirs and files at any depth.
+
+        Syncthing's .stversions nested under phone-poetry is the real case that
+        produced ghost duplicates. The ._Real.md sidecar is the macOS case that
+        slugs to the same id as the poem beside it and used to raise a false
+        ID-collision warning.
+        """
         catalog_dir = tmp_path / "vault" / "catalog"
         nested = catalog_dir / "phone-poetry" / ".stversions"
         nested.mkdir(parents=True)
         (catalog_dir / ".trash").mkdir()
         body = "---\nform: free_verse\n---\n\n{t}"
         (catalog_dir / "phone-poetry" / "Real.md").write_text(body.format(t="real"))
+        (catalog_dir / "phone-poetry" / "._Real.md").write_text(body.format(t="sidecar"))
         (nested / "Real~20250825-215745.md").write_text(body.format(t="old"))
         (catalog_dir / ".trash" / "Gone.md").write_text(body.format(t="gone"))
+        catalog = Catalog(vault_root=tmp_path / "vault")
 
-        result = Catalog(vault_root=tmp_path / "vault").sync()
+        result = catalog.sync()
 
         assert result.total_poems == 1
         assert result.warnings == []
+        assert catalog.index.get_by_id("real").file_path == "catalog/phone-poetry/Real.md"
+        assert catalog.index.get_by_id("real-20250825-215745") is None
+        assert catalog.index.get_by_id("gone") is None
 
     def test_second_nonforce_sync_of_unchanged_file_is_quiet(self, vault_with_poems):
         """Re-syncing unchanged files (no force) must not warn or double-count."""
